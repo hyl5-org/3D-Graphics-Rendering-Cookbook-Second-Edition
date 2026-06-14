@@ -10,3 +10,4 @@ imgui.ini
 .idea
 .vs/
 *.exe
+.cache

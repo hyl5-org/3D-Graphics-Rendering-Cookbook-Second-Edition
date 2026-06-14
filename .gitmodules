@@ -1,0 +1,4 @@
+[submodule "deps/src/lightweightvk"]
+	path = deps/src/lightweightvk
+	url = https://github.com/hyl5-org/lightweightvk.git
+	branch = master

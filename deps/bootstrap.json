@@ -3,8 +3,8 @@
     "name": "lightweightvk",
     "source": {
         "type": "git",
-        "url": "https://github.com/corporateshark/lightweightvk.git",
-        "revision": "1.4.1"
+        "url": "https://github.com/hyl5-org/lightweightvk.git",
+        "revision": "master"
     }
 },
 {
@@ -58,6 +58,14 @@
         "type": "git",
          "url": "https://github.com/CedricGuillemet/ImGuizmo",
          "revision" : "6d588209f99b1324a608783d1f52faa518886c29"
+    }
+},
+{
+    "name": "OMM",
+    "source": {
+        "type": "git",
+        "url": "https://github.com/NVIDIA-RTX/OMM.git",
+        "revision": "v1.9.1"
     }
 },
 {

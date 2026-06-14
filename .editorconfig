@@ -1,10 +1,10 @@
 root = true
 
-# C++
-[*.{c,cpp,h}]
-indent_style = tab
-indent_size = 3
-tab_width = 3
-end_of_line = crlf
+# C++ and shaders
+[*.{c,cc,cpp,cxx,h,hh,hpp,hxx,vert,frag,geom,comp,tesc,tese,glsl,hlsl}]
+indent_style = space
+indent_size = 4
+tab_width = 4
+end_of_line = lf
 trim_trailing_whitespace = true
 insert_final_newline = true
