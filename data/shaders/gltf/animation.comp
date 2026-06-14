@@ -4,113 +4,132 @@
 #extension GL_EXT_buffer_reference : require
 #extension GL_EXT_scalar_block_layout : require
 
-layout (local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
-struct TransformsBuffer {
-  uint mtxId;
-  uint matId;
-  uint nodeRef; // for CPU only
-  uint meshRef; // for CPU only
-  uint opaque;  // for CPU only
+struct TransformsBuffer
+{
+    uint mtxId;
+    uint matId;
+    uint nodeRef; // for CPU only
+    uint meshRef; // for CPU only
+    uint opaque;  // for CPU only
 };
 
-struct VertexSkinningData {
-  vec4 pos;
-  vec4 norm;
-  uint bones[8];
-  float weights[8];
-  uint meshId;
+struct VertexSkinningData
+{
+    vec4 pos;
+    vec4 norm;
+    uint bones[8];
+    float weights[8];
+    uint meshId;
 };
 
-struct VertexData {
-  vec3 pos;
-  vec3 norm;
-  vec4 color;
-  vec4 uv;
-  float padding[2];
+struct VertexData
+{
+    vec3 pos;
+    vec3 norm;
+    vec4 color;
+    vec4 uv;
+    float padding[2];
 };
 
 #define MAX_WEIGHTS 8
 
-struct MorphState {
-  uint meshId;
-  uint morphTarget[MAX_WEIGHTS];
-  float weights[MAX_WEIGHTS];
+struct MorphState
+{
+    uint meshId;
+    uint morphTarget[MAX_WEIGHTS];
+    float weights[MAX_WEIGHTS];
 };
 
-layout(std430, buffer_reference) readonly buffer Matrices {
-  mat4 matrix[];
+layout(std430, buffer_reference) readonly buffer Matrices
+{
+    mat4 matrix[];
 };
 
-layout(scalar, buffer_reference) readonly buffer MorphStates {
-  MorphState morphStates[];
+layout(scalar, buffer_reference) readonly buffer MorphStates
+{
+    MorphState morphStates[];
 };
 
-layout (scalar, buffer_reference) readonly buffer VertexSkinningBuffer {
-  VertexSkinningData vertices[];
+layout(scalar, buffer_reference) readonly buffer VertexSkinningBuffer
+{
+    VertexSkinningData vertices[];
 };
 
-layout (scalar, buffer_reference) writeonly buffer VertexBuffer {
-  VertexData vertices[];
+layout(scalar, buffer_reference) writeonly buffer VertexBuffer
+{
+    VertexData vertices[];
 };
 
-layout (scalar, buffer_reference) readonly buffer MorphVertexBuffer {
-  VertexData vertices[];
+layout(scalar, buffer_reference) readonly buffer MorphVertexBuffer
+{
+    VertexData vertices[];
 };
 
-layout(push_constant) uniform PerFrameData {
-  Matrices matrices;
-  MorphStates morphStates;
-  MorphVertexBuffer morphTargets;
-  VertexSkinningBuffer inBufferId;
-  VertexBuffer outBufferId;
-  uint numMorphStates;
-} pc;
+layout(push_constant) uniform PerFrameData
+{
+    Matrices matrices;
+    MorphStates morphStates;
+    MorphVertexBuffer morphTargets;
+    VertexSkinningBuffer inBufferId;
+    VertexBuffer outBufferId;
+    uint numMorphStates;
+}
+pc;
 
 void main()
 {
-  // our vertex buffers are always padded to a 16-vertex boundary
+    // our vertex buffers are always padded to a 16-vertex boundary
 
-  uint index = gl_GlobalInvocationID.x;
+    uint index = gl_GlobalInvocationID.x;
 
-  VertexSkinningData inVtx = pc.inBufferId.vertices[index];
-  vec4 inPos  = vec4(inVtx.pos.xyz, 1.0);
-  vec4 inNorm = vec4(inVtx.norm.xyz, 0.0);
+    VertexSkinningData inVtx = pc.inBufferId.vertices[index];
+    vec4 inPos = vec4(inVtx.pos.xyz, 1.0);
+    vec4 inNorm = vec4(inVtx.norm.xyz, 0.0);
 
-  // morphing
-  if (inVtx.meshId < pc.numMorphStates) {
-    MorphState ms = pc.morphStates.morphStates[inVtx.meshId];
-    if (ms.meshId != ~0) {
-      for (int m = 0; m != MAX_WEIGHTS; m++) {
-        if (ms.weights[m] > 0) {
-          VertexData mVtx = pc.morphTargets.vertices[ms.morphTarget[m] + index];
-          inPos.xyz  += mVtx.pos  * ms.weights[m];
-          inNorm.xyz += mVtx.norm * ms.weights[m];
+    // morphing
+    if (inVtx.meshId < pc.numMorphStates)
+    {
+        MorphState ms = pc.morphStates.morphStates[inVtx.meshId];
+        if (ms.meshId != ~0)
+        {
+            for (int m = 0; m != MAX_WEIGHTS; m++)
+            {
+                if (ms.weights[m] > 0)
+                {
+                    VertexData mVtx = pc.morphTargets.vertices[ms.morphTarget[m] + index];
+                    inPos.xyz += mVtx.pos * ms.weights[m];
+                    inNorm.xyz += mVtx.norm * ms.weights[m];
+                }
+            }
         }
-      }
     }
-  }
 
-  vec4 pos = vec4(0);
-  vec4 norm = vec4(0);
+    vec4 pos = vec4(0);
+    vec4 norm = vec4(0);
 
-  int i = 0;
+    int i = 0;
 
-  // skinning
-  for (; i != MAX_WEIGHTS; i++) {
-    if (inVtx.bones[i] == ~0)
-      break;
+    // skinning
+    for (; i != MAX_WEIGHTS; i++)
+    {
+        if (inVtx.bones[i] == ~0)
+        {
+            break;
+        }
 
-    mat4 boneMat = pc.matrices.matrix[inVtx.bones[i]];
-    pos += boneMat * inPos * inVtx.weights[i];
-    norm += transpose(inverse(boneMat)) * inNorm * inVtx.weights[i];
-  }
+        mat4 boneMat = pc.matrices.matrix[inVtx.bones[i]];
+        pos += boneMat * inPos * inVtx.weights[i];
+        norm += transpose(inverse(boneMat)) * inNorm * inVtx.weights[i];
+    }
 
-  if (i == 0) {
-    pos.xyz = inPos.xyz;
-    norm.xyz = inNorm.xyz;
-  }
+    if (i == 0)
+    {
+        pos.xyz = inPos.xyz;
+        norm.xyz = inNorm.xyz;
+    }
 
-  pc.outBufferId.vertices[index].pos = pos.xyz;
-  pc.outBufferId.vertices[index].norm = normalize(norm.xyz);
+    pc.outBufferId.vertices[index].pos = pos.xyz;
+    pc.outBufferId.vertices[index].norm = normalize(norm.xyz);
 }

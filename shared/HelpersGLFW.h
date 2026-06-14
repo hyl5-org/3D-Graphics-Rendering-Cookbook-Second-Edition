@@ -20,4 +20,4 @@
 
 #include <GLFW/glfw3native.h>
 
-GLFWwindow* initWindow(const char* windowTitle, uint32_t& outWidth, uint32_t& outHeight);
+GLFWwindow *initWindow(const char *windowTitle, uint32_t &outWidth, uint32_t &outHeight);

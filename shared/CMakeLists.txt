@@ -7,6 +7,10 @@ include(../CMake/CommonMacros.txt)
 file(GLOB_RECURSE SRC_FILES LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} *.c??)
 file(GLOB_RECURSE HEADER_FILES LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} *.h)
 
+if(ANDROID)
+  list(REMOVE_ITEM SRC_FILES HelpersGLFW.cpp)
+  list(REMOVE_ITEM HEADER_FILES HelpersGLFW.h)
+endif()
 
 add_library(SharedUtils STATIC ${SRC_FILES} ${HEADER_FILES})
 
@@ -22,6 +26,16 @@ if(WIN32)
   target_compile_definitions(SharedUtils PUBLIC "NOMINMAX")
 endif()
 
-if(UNIX AND NOT APPLE)
+if(UNIX AND NOT APPLE AND NOT ANDROID)
   target_link_libraries(SharedUtils PUBLIC tbb)
+endif()
+
+if(ANDROID)
+  if(DEFINED ENV{ANDROID_NDK})
+    cmake_path(SET NDK_PATH "$ENV{ANDROID_NDK}")
+  else()
+    cmake_path(SET NDK_PATH "$ENV{NDK_ROOT}")
+  endif()
+  target_include_directories(SharedUtils PUBLIC "${NDK_PATH}/sources/android/native_app_glue")
+  target_link_libraries(SharedUtils PUBLIC android)
 endif()

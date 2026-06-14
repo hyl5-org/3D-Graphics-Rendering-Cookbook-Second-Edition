@@ -36,91 +36,90 @@
 
 #include <numeric>
 
-#include <glm/glm.hpp>
 #include <glm/ext.hpp>
+#include <glm/glm.hpp>
 
 /// Virtual trackball for user interaction with rotations
 class VirtualTrackball
 {
-public:
-	VirtualTrackball() = default;
+  public:
+    VirtualTrackball() = default;
 
-	/**
-		Get rotation matrix for new mouse point
-	**/
-	glm::mat4 dragTo(glm::vec2 screenPoint, float speed, bool keyPressed)
-	{
-		if (keyPressed && !isDraggingActive_)
-		{
-			startDragging(screenPoint);
+    /**
+      Get rotation matrix for new mouse point
+    **/
+    glm::mat4 dragTo(glm::vec2 screenPoint, float speed, bool keyPressed)
+    {
+        if (keyPressed && !isDraggingActive_)
+        {
+            startDragging(screenPoint);
 
-			isDraggingActive_ = keyPressed;
+            isDraggingActive_ = keyPressed;
 
-			return glm::mat4(1.0f);
-		}
+            return glm::mat4(1.0f);
+        }
 
-		isDraggingActive_ = keyPressed;
+        isDraggingActive_ = keyPressed;
 
-		if (!keyPressed) return glm::mat4(1.0f);
+        if (!keyPressed)
+        {
+            return glm::mat4(1.0f);
+        }
 
-		pointCur_ = projectOnSphere(screenPoint);
+        pointCur_ = projectOnSphere(screenPoint);
 
-		const glm::vec3 direction = pointCur_ - pointPrev_;
-		const float shift = glm::length(direction);
+        const glm::vec3 direction = pointCur_ - pointPrev_;
+        const float shift = glm::length(direction);
 
-		glm::mat4 rotMatrix = glm::mat4(1.0f);
+        glm::mat4 rotMatrix = glm::mat4(1.0f);
 
-		if (shift > std::numeric_limits<float>::epsilon())
-		{
-			const glm::vec3 axis = glm::cross( pointPrev_, pointCur_);
-			rotMatrix = glm::rotate(glm::mat4(1.0f), shift * speed, axis);
-		}
+        if (shift > std::numeric_limits<float>::epsilon())
+        {
+            const glm::vec3 axis = glm::cross(pointPrev_, pointCur_);
+            rotMatrix = glm::rotate(glm::mat4(1.0f), shift * speed, axis);
+        }
 
-		rotationDelta_ = rotMatrix;
+        rotationDelta_ = rotMatrix;
 
-		return rotMatrix;
-	}
+        return rotMatrix;
+    }
 
-	const glm::mat4& getRotationDelta() const
-	{
-		return rotationDelta_;
-	};
+    const glm::mat4 &getRotationDelta() const
+    {
+        return rotationDelta_;
+    };
 
-	/**
-		Get current rotation matrix
-	**/
-	glm::mat4 getRotationMatrix() const
-	{
-		return rotation_ * rotationDelta_;
-	}
+    /**
+      Get current rotation matrix
+    **/
+    glm::mat4 getRotationMatrix() const
+    {
+        return rotation_ * rotationDelta_;
+    }
 
-private:
-	void startDragging(glm::vec2 screenPoint)
-	{
-		rotation_ = rotation_ * rotationDelta_;
-		rotationDelta_ = glm::mat4(1.0f);
-		pointCur_ = projectOnSphere(screenPoint);
-		pointPrev_ = pointCur_;		
-	}
+  private:
+    void startDragging(glm::vec2 screenPoint)
+    {
+        rotation_ = rotation_ * rotationDelta_;
+        rotationDelta_ = glm::mat4(1.0f);
+        pointCur_ = projectOnSphere(screenPoint);
+        pointPrev_ = pointCur_;
+    }
 
-	glm::vec3 projectOnSphere(glm::vec2 ScreenPoint)
-	{
-		// convert to -1.0...1.0 range
-		glm::vec3 proj(
-			+(2.0f * ScreenPoint.x - 1.0f),
-			-(2.0f * ScreenPoint.y - 1.0f),
-			0.0f
-		);
+    glm::vec3 projectOnSphere(glm::vec2 ScreenPoint)
+    {
+        // convert to -1.0...1.0 range
+        glm::vec3 proj(+(2.0f * ScreenPoint.x - 1.0f), -(2.0f * ScreenPoint.y - 1.0f), 0.0f);
 
-		const float Length = std::min(glm::length(proj), 1.0f);
+        const float Length = std::min(glm::length(proj), 1.0f);
 
-		proj.z = sqrtf(1.001f - Length * Length);
+        proj.z = sqrtf(1.001f - Length * Length);
 
-		return glm::normalize(proj);
-	}
-	glm::vec3 pointCur_ = glm::vec3(0.0f);
-	glm::vec3 pointPrev_ = glm::vec3(0.0f);
-	glm::mat4 rotation_ = glm::mat4(1.0f);
-	glm::mat4 rotationDelta_ = glm::mat4(1.0f);
-	bool isDraggingActive_ = false;
+        return glm::normalize(proj);
+    }
+    glm::vec3 pointCur_ = glm::vec3(0.0f);
+    glm::vec3 pointPrev_ = glm::vec3(0.0f);
+    glm::mat4 rotation_ = glm::mat4(1.0f);
+    glm::mat4 rotationDelta_ = glm::mat4(1.0f);
+    bool isDraggingActive_ = false;
 };
