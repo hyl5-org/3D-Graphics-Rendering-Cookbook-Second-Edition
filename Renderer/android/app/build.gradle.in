@@ -1,0 +1,93 @@
+plugins {
+  id 'com.android.application'
+}
+
+android {
+  namespace = 'org.lvk.samples'
+  compileSdk = 35
+
+  def cookbookRoot = file('@COOKBOOK_ANDROID_CMAKELISTS@').parentFile
+
+  sourceSets {
+    main {
+      jniLibs.srcDirs += [
+        "${cookbookRoot}/deps/src/lightweightvk/third-party/deps/src/android-validation-layers"
+      ]
+    }
+  }
+
+  defaultConfig {
+    applicationId = "org.lvk.samples.lvk_@APP_NAME@"
+    minSdk = 33
+    targetSdk = 35
+    versionCode = 1
+    versionName = "1.0"
+    ndk {
+      abiFilters.addAll(@ANDROID_ABI_FILTERS@)
+    }
+    externalNativeBuild {
+      cmake {
+        targets 'lvk_android_native_@APP_NAME@'
+        cppFlags '-std=c++20'
+        arguments '-DCMAKE_OBJECT_PATH_MAX=1024',
+                  '-DLVK_DEPLOY_DEPS=OFF',
+                  '-DLVK_WITH_GLFW=OFF',
+                  '-DLVK_WITH_SDL3=OFF',
+                  '-DLVK_WITH_SAMPLES=OFF',
+                  '-DLVK_WITH_SAMPLES_ANDROID=OFF',
+                  '-DLVK_WITH_TRACY=ON',
+                  '-DLVK_WITH_TRACY_GPU=OFF',
+                  '-DLVK_WITH_WAYLAND=OFF',
+                  '-DLVK_WITH_IMPLOT=ON',
+                  '-DLVK_WITH_OPENXR=OFF',
+                  '-DPython3_EXECUTABLE=@COOKBOOK_ANDROID_PYTHON3@'
+      }
+    }
+  }
+
+  androidResources {
+    noCompress.addAll(['png', 'ktx', 'data'])
+  }
+
+  packaging {
+    jniLibs {
+      keepDebugSymbols += ['**/*.so']
+    }
+  }
+
+  buildTypes {
+    debug {
+      signingConfig = signingConfigs.debug
+      debuggable true
+      jniDebuggable true
+      externalNativeBuild {
+        cmake {
+          arguments '-DCMAKE_BUILD_TYPE=RelWithDebInfo'
+        }
+      }
+    }
+    release {
+      signingConfig = signingConfigs.debug
+      externalNativeBuild {
+        cmake {
+          arguments '-DCMAKE_BUILD_TYPE=RelWithDebInfo'
+        }
+      }
+    }
+  }
+
+  compileOptions {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+  }
+
+  externalNativeBuild {
+    cmake {
+      path = file('@COOKBOOK_ANDROID_CMAKELISTS@')
+    }
+  }
+}
+
+dependencies {
+  implementation project(':lvklib')
+}

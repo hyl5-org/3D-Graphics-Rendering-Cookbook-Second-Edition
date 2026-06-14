@@ -335,7 +335,7 @@ Here's the complete list of all the demo applications included in this book.
 
   ![image](.github/screenshots/Chapter11/Ch11_Fig06_LazyLoading.jpg)
 
-* 06_FinalDemo
+* Renderer
 
   ![image](.github/screenshots/Chapter11/Ch11_Fig08_Final.jpg)
 
