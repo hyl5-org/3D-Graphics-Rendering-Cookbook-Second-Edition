@@ -6,19 +6,7 @@
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(set = 0, binding = 0) uniform texture2D kTextures2D[];
-layout(set = 0, binding = 1) uniform sampler kSamplers[];
 layout(set = 0, binding = 2, rg8) uniform writeonly image2D kTextures2DOut[];
-
-vec4 textureBindless2D(uint textureid, uint smpl, vec2 uv)
-{
-    return textureLod(nonuniformEXT(sampler2D(kTextures2D[textureid], kSamplers[smpl])), uv, 0);
-}
-
-ivec2 textureBindlessSize2D(uint textureid)
-{
-    return textureSize(nonuniformEXT(kTextures2D[textureid]), 0);
-}
 
 layout(constant_id = 0) const uint kStep = 1u;
 
@@ -86,9 +74,9 @@ void main()
     vec2 uv = (vec2(xy) + vec2(0.5)) / vec2(size);
     vec2 texelSize = vec2(1.0) / vec2(size);
 
-    f16vec2 centerColor = f16vec2(textureBindless2D(pc.texIn, pc.smpl, uv).rg);
-    float centerDepth = textureBindless2D(pc.texDepth, pc.smpl, uv).r;
-    // vec2 centerNormalOct = textureBindless2D(pc.texGBuffer1, pc.smpl, uv).xy;
+    f16vec2 centerColor = f16vec2(textureBindless2DLod(pc.texIn, pc.smpl, uv, 0.0).rg);
+    float centerDepth = textureBindless2DLod(pc.texDepth, pc.smpl, uv, 0.0).r;
+    // vec2 centerNormalOct = textureBindless2DLod(pc.texGBuffer1, pc.smpl, uv, 0.0).xy;
 
     vec2 stepTexel = texelSize * float(kStep);
 
@@ -100,10 +88,10 @@ void main()
     {
         vec2 offset = (kStep == 1u ? kCrossOffsets[i] : kDiagonalOffsets[i]) * stepTexel;
         vec2 sampleUV = uv + offset;
-        f16vec2 sampleColor = f16vec2(textureBindless2D(pc.texIn, pc.smpl, sampleUV).rg);
-        float sampleDepth = textureBindless2D(pc.texDepth, pc.smpl, sampleUV).r;
+        f16vec2 sampleColor = f16vec2(textureBindless2DLod(pc.texIn, pc.smpl, sampleUV, 0.0).rg);
+        float sampleDepth = textureBindless2DLod(pc.texDepth, pc.smpl, sampleUV, 0.0).r;
         // Normal weighting costs about 0.2 ms on mobile with no obvious visual gain over depth-only weighting.
-        // vec2 sampleNormalOct = textureBindless2D(pc.texGBuffer1, pc.smpl, sampleUV).xy;
+        // vec2 sampleNormalOct = textureBindless2DLod(pc.texGBuffer1, pc.smpl, sampleUV, 0.0).xy;
 
         // float w = 0.125 * edgeWeight(centerDepth, sampleDepth, centerNormalOct, sampleNormalOct);
         float w = 0.125 * edgeWeightFast(centerDepth, sampleDepth);

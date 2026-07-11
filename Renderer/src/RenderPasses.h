@@ -39,27 +39,6 @@ struct MeshPushConstants
     uint32_t texSkyboxIrradiance;
 };
 
-struct SSAOPushConstants
-{
-    uint32_t texDepth;
-    uint32_t texRotation;
-    uint32_t texOut;
-    uint32_t sampler;
-    float zNear;
-    float zFar;
-    float radius;
-    float attScale;
-    float distScale;
-};
-
-struct CombineSSAOPushConstants
-{
-    uint32_t texColor;
-    uint32_t texSSAO;
-    uint32_t sampler;
-    float scale;
-    float bias;
-};
 
 struct LightingPassPushConstants
 {
@@ -214,25 +193,6 @@ struct OITPass
                                const FrameTargets &targets, lvk::TextureHandle texColor);
 };
 
-struct SSAOPass
-{
-    lvk::Holder<lvk::TextureHandle> ssao;
-    std::array<lvk::Holder<lvk::TextureHandle>, 2> blur;
-    lvk::Holder<lvk::TextureHandle> rotations;
-    lvk::Holder<lvk::ShaderModuleHandle> compSSAO;
-    lvk::Holder<lvk::ComputePipelineHandle> pipelineSSAO;
-    lvk::Holder<lvk::ShaderModuleHandle> compBlur;
-    lvk::Holder<lvk::ComputePipelineHandle> pipelineBlurX;
-    lvk::Holder<lvk::ComputePipelineHandle> pipelineBlurY;
-    lvk::Holder<lvk::ShaderModuleHandle> vertCombine;
-    lvk::Holder<lvk::ShaderModuleHandle> fragCombine;
-    lvk::Holder<lvk::RenderPipelineHandle> pipelineCombine;
-    SSAOPushConstants pc;
-    CombineSSAOPushConstants pcCombine;
-
-    SSAOPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets, lvk::SamplerHandle samplerClamp,
-             lvk::Format swapchainFormat);
-};
 
 struct HDRPass
 {

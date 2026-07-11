@@ -77,14 +77,6 @@ struct DrawSettings
     bool lightFrustum = false;
 };
 
-struct SSAOSettings
-{
-    bool enabled = false;
-    bool blurEnabled = false;
-    int numBlurPasses = 1;
-    float depthThreshold = 30.0f;
-};
-
 struct RayTracingSettings
 {
     bool shadows = true;
@@ -133,7 +125,6 @@ struct LightParams
 struct DemoSettings
 {
     DrawSettings draw;
-    SSAOSettings ssao;
     RayTracingSettings rayTracing;
     OITSettings oit;
     HDRSettings hdr;

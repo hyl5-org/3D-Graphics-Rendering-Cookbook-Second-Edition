@@ -4,19 +4,7 @@
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(set = 0, binding = 0) uniform texture2D kTextures2D[];
-layout(set = 0, binding = 1) uniform sampler kSamplers[];
 layout(set = 0, binding = 2, rg8) uniform writeonly image2D kTextures2DOut[];
-
-vec4 textureBindless2D(uint textureid, uint smpl, vec2 uv)
-{
-    return textureLod(nonuniformEXT(sampler2D(kTextures2D[textureid], kSamplers[smpl])), uv, 0);
-}
-
-ivec2 textureBindlessSize2D(uint textureid)
-{
-    return textureSize(nonuniformEXT(kTextures2D[textureid]), 0);
-}
 
 layout(push_constant) uniform PushConstants
 {
@@ -59,9 +47,9 @@ void main()
 
     vec2 uv = (vec2(xy) + vec2(0.5)) / vec2(size);
 
-    f16vec2 current = f16vec2(textureBindless2D(pc.texCurrent, pc.smpl, uv).rg);
+    f16vec2 current = f16vec2(textureBindless2DLod(pc.texCurrent, pc.smpl, uv, 0.0).rg);
 
-    float depth = textureBindless2D(pc.texDepth, pc.smpl, uv).r;
+    float depth = textureBindless2DLod(pc.texDepth, pc.smpl, uv, 0.0).r;
 
     if (depth >= 0.9999)
     {
@@ -77,7 +65,7 @@ void main()
 
     if (valid)
     {
-        float prevFrameDepth = textureBindless2D(pc.texPrevDepth, pc.smpl, prevUV).r;
+        float prevFrameDepth = textureBindless2DLod(pc.texPrevDepth, pc.smpl, prevUV, 0.0).r;
         vec4 prevClip = pc.prevViewProj * vec4(worldPos, 1.0);
         float expectedDepth = prevClip.z / prevClip.w;
         if (abs(expectedDepth - prevFrameDepth) > pc.depthThreshold)
@@ -94,7 +82,7 @@ void main()
     {
         for (int dx = -1; dx <= 1; dx++)
         {
-            f16vec2 s = f16vec2(textureBindless2D(pc.texCurrent, pc.smpl, uv + vec2(dx, dy) * texelSize).rg);
+            f16vec2 s = f16vec2(textureBindless2DLod(pc.texCurrent, pc.smpl, uv + vec2(dx, dy) * texelSize, 0.0).rg);
             nMin = min(nMin, s);
             nMax = max(nMax, s);
         }
@@ -103,7 +91,7 @@ void main()
     f16vec2 result;
     if (valid)
     {
-        f16vec2 history = f16vec2(textureBindless2D(pc.texHistory, pc.smpl, prevUV).rg);
+        f16vec2 history = f16vec2(textureBindless2DLod(pc.texHistory, pc.smpl, prevUV, 0.0).rg);
         // TODO(luhanyang): This may destabilize temporal accumulation for shadow/AO.
         history = clamp(history, nMin, nMax);
         // EMA: result = history * (1 - alpha) + current * alpha

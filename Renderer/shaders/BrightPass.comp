@@ -1,9 +1,6 @@
 //
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(set = 0, binding = 0) uniform texture2D kTextures2D[];
-layout(set = 0, binding = 1) uniform sampler kSamplers[];
-
 layout(set = 0, binding = 2, rgba16f) uniform writeonly image2D kTextures2DOutRGBA[];
 layout(set = 0, binding = 2, r16f) uniform writeonly image2D kTextures2DOutR[];
 
@@ -17,16 +14,6 @@ layout(push_constant) uniform PushConstants
     uint enableBloom;
 }
 pc;
-
-ivec2 textureBindlessSize2D(uint textureid)
-{
-    return textureSize(nonuniformEXT(kTextures2D[textureid]), 0);
-}
-
-vec4 textureBindless2D(uint textureid, vec2 uv)
-{
-    return textureLod(nonuniformEXT(sampler2D(kTextures2D[textureid], kSamplers[pc.smpl])), uv, 0);
-}
 
 void main()
 {
@@ -51,7 +38,7 @@ void main()
     {
         for (int u = 0; u != 3; u++)
         {
-            color += textureBindless2D(pc.texColor, uv0 + vec2(u, v) * dxdy);
+            color += textureBindless2DLod(pc.texColor, pc.smpl, uv0 + vec2(u, v) * dxdy, 0.0);
         }
     }
 

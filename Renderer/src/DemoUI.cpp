@@ -46,7 +46,7 @@ void drawToneMappingCurve(uint32_t width, uint32_t height, const HDRPushConstant
 } // namespace
 
 void drawControls(uint32_t width, uint32_t height, float aspectRatio, SceneCulling &culling, ShadowPass &shadows,
-                  SSAOPass &ssao, HDRPass &hdr, VulkanApp &app)
+                  HDRPass &hdr, VulkanApp &app)
 {
     const ImGuiViewport *v = ImGui::GetMainViewport();
     const float windowWidth = v->WorkSize.x / 5;
@@ -103,29 +103,6 @@ void drawControls(uint32_t width, uint32_t height, float aspectRatio, SceneCulli
         ImGui::Image(shadows.map.index(), ImVec2(512, 512));
     }
 
-    if (ImGui::CollapsingHeader("SSAO"))
-    {
-        ImGui::Indent(indentSize);
-        ImGui::Checkbox("Enable SSAO", &gSettings.ssao.enabled);
-        ImGui::BeginDisabled(!gSettings.ssao.enabled);
-        ImGui::Checkbox("Enable blur", &gSettings.ssao.blurEnabled);
-        ImGui::BeginDisabled(!gSettings.ssao.blurEnabled);
-        ImGui::SliderFloat("Blur depth threshold", &gSettings.ssao.depthThreshold, 0.0f, 50.0f);
-        ImGui::SliderInt("Blur num passes", &gSettings.ssao.numBlurPasses, 1, 5);
-        ImGui::EndDisabled();
-        ImGui::SliderFloat("SSAO scale", &ssao.pcCombine.scale, 0.0f, 2.0f);
-        ImGui::SliderFloat("SSAO bias", &ssao.pcCombine.bias, 0.0f, 0.3f);
-        ImGui::SliderFloat("SSAO radius", &ssao.pc.radius, 0.001f, 0.02f);
-        ImGui::SliderFloat("SSAO attenuation scale", &ssao.pc.attScale, 0.5f, 1.5f);
-        ImGui::SliderFloat("SSAO distance scale", &ssao.pc.distScale, 0.0f, 2.0f);
-        if (gSettings.ssao.enabled)
-        {
-            ImGui::Image(ssao.ssao.index(), ImVec2(windowWidth, windowWidth / aspectRatio));
-        }
-        ImGui::EndDisabled();
-        ImGui::Unindent(indentSize);
-        ImGui::Separator();
-    }
 
     if (ImGui::CollapsingHeader("Ray Tracing"))
     {

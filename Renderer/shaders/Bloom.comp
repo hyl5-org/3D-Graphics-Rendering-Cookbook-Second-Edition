@@ -1,9 +1,6 @@
 //
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(set = 0, binding = 0) uniform texture2D kTextures2D[];
-layout(set = 0, binding = 1) uniform sampler kSamplers[];
-
 layout(set = 0, binding = 2, rgba16f) uniform writeonly image2D kTextures2DOut[];
 
 layout(push_constant) uniform PushConstants
@@ -13,16 +10,6 @@ layout(push_constant) uniform PushConstants
     uint smpl;
 }
 pc;
-
-ivec2 textureBindlessSize2D(uint textureid)
-{
-    return textureSize(nonuniformEXT(kTextures2D[textureid]), 0);
-}
-
-vec4 textureBindless2D(uint textureid, vec2 uv)
-{
-    return textureLod(nonuniformEXT(sampler2D(kTextures2D[textureid], kSamplers[pc.smpl])), uv, 0);
-}
 
 layout(constant_id = 0) const bool kIsHorizontal = true;
 

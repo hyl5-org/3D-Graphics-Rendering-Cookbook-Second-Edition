@@ -40,8 +40,6 @@ VULKAN_APP_MAIN
     // Geometry
     RenderPipelines pipelines(ctx, loadedScene.meshData, app.getDepthFormat(), ctx->getFormat(shadows.map));
 
-    SSAOPass ssao(ctx, targets, samplerClamp, ctx->getSwapchainFormat());
-
     RTShadowAOPass rtShadowAO(ctx, targets, ctx->getSwapchainFormat());
     LightingPass lighting(ctx, targets, samplerClamp, ctx->getSwapchainFormat());
 
@@ -149,7 +147,7 @@ VULKAN_APP_MAIN
                 app.imgui_->beginFrame(framebufferMain);
                 app.drawFPS();
                 app.drawMemo();
-                drawControls(width, height, aspectRatio, culling, shadows, ssao, hdr, app);
+                drawControls(width, height, aspectRatio, culling, shadows, hdr, app);
 #if defined(ANDROID)
                 const float screenWidth = ImGui::GetIO().DisplaySize.x;
                 const float screenHeight = ImGui::GetIO().DisplaySize.y;

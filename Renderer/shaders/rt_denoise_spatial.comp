@@ -4,19 +4,7 @@
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(set = 0, binding = 0) uniform texture2D kTextures2D[];
-layout(set = 0, binding = 1) uniform sampler kSamplers[];
 layout(set = 0, binding = 2, rg8) uniform writeonly image2D kTextures2DOut[];
-
-vec4 textureBindless2D(uint textureid, uint smpl, vec2 uv)
-{
-    return textureLod(nonuniformEXT(sampler2D(kTextures2D[textureid], kSamplers[smpl])), uv, 0);
-}
-
-ivec2 textureBindlessSize2D(uint textureid)
-{
-    return textureSize(nonuniformEXT(kTextures2D[textureid]), 0);
-}
 
 layout(constant_id = 0) const bool kIsHorizontal = true;
 
@@ -47,8 +35,8 @@ void main()
     vec2 texCoord = (vec2(xy) + vec2(0.5)) / vec2(size);
     float texScaler = 1.0 / (kIsHorizontal ? float(size.x) : float(size.y));
 
-    f16vec2 fragColor = f16vec2(textureBindless2D(pc.texIn, pc.smpl, texCoord).rg);
-    float fragDepth = textureBindless2D(pc.texDepth, pc.smpl, texCoord).r;
+    f16vec2 fragColor = f16vec2(textureBindless2DLod(pc.texIn, pc.smpl, texCoord, 0.0).rg);
+    float fragDepth = textureBindless2DLod(pc.texDepth, pc.smpl, texCoord, 0.0).r;
 
     f16vec2 c = f16vec2(0.0hf);
     float16_t totalWeight = 0.0hf;
@@ -58,8 +46,8 @@ void main()
         float offset = float(i - kFilterSize / 2);
         vec2 uv = texCoord + texScaler * (kIsHorizontal ? vec2(offset, 0.0) : vec2(0.0, offset));
 
-        f16vec2 color = f16vec2(textureBindless2D(pc.texIn, pc.smpl, uv).rg);
-        float depth = textureBindless2D(pc.texDepth, pc.smpl, uv).r;
+        f16vec2 color = f16vec2(textureBindless2DLod(pc.texIn, pc.smpl, uv, 0.0).rg);
+        float depth = textureBindless2DLod(pc.texDepth, pc.smpl, uv, 0.0).r;
 
         float depthDiff = abs(depth - fragDepth);
         float16_t w = gaussWeights[i] * float16_t(1.0 - clamp(depthDiff * pc.depthThreshold, 0.0, 1.0));
