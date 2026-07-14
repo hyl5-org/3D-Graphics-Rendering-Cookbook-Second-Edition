@@ -4,7 +4,7 @@
     "source": {
         "type": "git",
         "url": "https://github.com/hyl5-org/lightweightvk.git",
-        "revision": "master"
+        "revision": "renderer-backend-patch"
     }
 },
 {
