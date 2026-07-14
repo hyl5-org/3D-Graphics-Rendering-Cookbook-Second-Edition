@@ -65,6 +65,7 @@ INJECT_FRAGMENT_BINDLESS = """layout (set = 0, binding = 0) uniform texture2D   
 layout (set = 1, binding = 0) uniform texture3D   kTextures3D[];
 layout (set = 2, binding = 0) uniform textureCube kTexturesCube[];
 layout (set = 3, binding = 0) uniform texture2D   kTextures2DShadow[];
+layout (set = 0, binding = 4) uniform texture2DArray kTextures2DArray[];
 layout (set = 0, binding = 1) uniform sampler       kSamplers[];
 layout (set = 3, binding = 1) uniform samplerShadow kSamplersShadow[];
 layout (set = 0, binding = 3) uniform sampler2D     kSamplersYUV[];
@@ -86,6 +87,18 @@ FRAGMENT_HELPERS = {
 """,
     "textureBindlessSize2D(": """ivec2 textureBindlessSize2D(uint textureid) {
   return textureSize(nonuniformEXT(kTextures2D[textureid]), 0);
+}
+""",
+    "textureBindless2DArray(": """vec4 textureBindless2DArray(uint textureid, uint samplerid, vec2 uv, uint slice) {
+  return texture(nonuniformEXT(sampler2DArray(kTextures2DArray[textureid], kSamplers[samplerid])), vec3(uv, float(slice)));
+}
+""",
+    "textureBindless2DArrayLod(": """vec4 textureBindless2DArrayLod(uint textureid, uint samplerid, vec2 uv, uint slice, float lod) {
+  return textureLod(nonuniformEXT(sampler2DArray(kTextures2DArray[textureid], kSamplers[samplerid])), vec3(uv, float(slice)), lod);
+}
+""",
+    "textureBindlessSize2DArray(": """ivec3 textureBindlessSize2DArray(uint textureid) {
+  return textureSize(nonuniformEXT(kTextures2DArray[textureid]), 0);
 }
 """,
     "textureBindlessCube(": """vec4 textureBindlessCube(uint textureid, uint samplerid, vec3 uvw) {
