@@ -1,8 +1,8 @@
 //
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(set = 0, binding = 2, rgba16f) uniform writeonly image2D kTextures2DOutRGBA[];
-layout(set = 0, binding = 2, r16f) uniform writeonly image2D kTextures2DOutR[];
+layout(set = 0, binding = 5, rgba16f) uniform writeonly image2DArray kTextures2DOutRGBA[];
+layout(set = 0, binding = 5, r16f) uniform writeonly image2DArray kTextures2DOutR[];
 
 layout(push_constant) uniform PushConstants
 {
@@ -17,17 +17,22 @@ pc;
 
 void main()
 {
-    const vec2 sizeIn = textureBindlessSize2D(pc.texColor).xy;
-    const vec2 sizeOut = textureBindlessSize2D(pc.texOut).xy;
+    const uvec3 gid = gl_GlobalInvocationID;
+    const uint view_idx = gid.z;
+    const uvec3 sizeIn = uvec3(textureBindlessSize2DArray(pc.texColor));
+    const uvec3 sizeOut = uvec3(imageSize(kTextures2DOutRGBA[pc.texOut]));
 
-    const vec2 xy = gl_GlobalInvocationID.xy;
-    const vec2 uv0 = (gl_GlobalInvocationID.xy + vec2(0)) / sizeOut;
-    const vec2 uv1 = (gl_GlobalInvocationID.xy + vec2(1)) / sizeOut;
-
-    if (xy.x > sizeIn.x || xy.y > sizeIn.y)
+    if (gid.x >= sizeOut.x || gid.y >= sizeOut.y || gid.z >= sizeOut.z || gid.x >= sizeIn.x || gid.y >= sizeIn.y ||
+        gid.z >= sizeIn.z)
     {
         return;
     }
+
+    const ivec3 outPos = ivec3(gid);
+    const vec2 xy = vec2(gid.xy);
+    const vec2 outSize = vec2(sizeOut.xy);
+    const vec2 uv0 = xy / outSize;
+    const vec2 uv1 = (xy + vec2(1)) / outSize;
 
     vec2 dxdy = (uv1 - uv0) / 3;
 
@@ -38,7 +43,7 @@ void main()
     {
         for (int u = 0; u != 3; u++)
         {
-            color += textureBindless2DLod(pc.texColor, pc.smpl, uv0 + vec2(u, v) * dxdy, 0.0);
+            color += textureBindless2DArrayLod(pc.texColor, pc.smpl, uv0 + vec2(u, v) * dxdy, view_idx, 0.0);
         }
     }
 
@@ -47,7 +52,7 @@ void main()
     if (pc.enableBloom != 0)
     {
         vec3 rgb = luminance > 1.0 ? color.rgb : vec3(0);
-        imageStore(kTextures2DOutRGBA[pc.texOut], ivec2(xy), vec4(rgb, 1.0));
+        imageStore(kTextures2DOutRGBA[pc.texOut], outPos, vec4(rgb, 1.0));
     }
-    imageStore(kTextures2DOutR[pc.texLuminance], ivec2(xy), vec4(luminance));
+    imageStore(kTextures2DOutR[pc.texLuminance], outPos, vec4(luminance));
 }

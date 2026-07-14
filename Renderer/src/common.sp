@@ -27,12 +27,14 @@ layout(std430, buffer_reference) buffer AtomicCounter {
 layout(std430, buffer_reference) readonly buffer LightBuffer {
   mat4 viewProjBias;
   vec4 lightDir;
+  vec4 lightColorIntensity;
   uint shadowTexture;
   uint shadowSampler;
   uint frameIndex;
+  float iblIntensity;
 };
 
-layout(std430, buffer_reference) buffer OIT {
+struct OIT {
   AtomicCounter atomicCounter;
   TransparencyListsBuffer oitLists;
   uint texHeadsOIT;
@@ -40,8 +42,8 @@ layout(std430, buffer_reference) buffer OIT {
 };
 
 layout(push_constant) uniform PerFrameData {
-  mat4 viewProj;
-  vec4 cameraPos;
+  mat4 viewProj[2];
+  vec4 cameraPos[2];
   TransformBuffer transforms;
   DrawDataBuffer drawData;
   MaterialBuffer materials;

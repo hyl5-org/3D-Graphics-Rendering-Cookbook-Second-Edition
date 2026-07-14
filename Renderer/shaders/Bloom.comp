@@ -1,7 +1,7 @@
 //
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(set = 0, binding = 2, rgba16f) uniform writeonly image2D kTextures2DOut[];
+layout(set = 0, binding = 5, rgba16f) uniform writeonly image2DArray kTextures2DOut[];
 
 layout(push_constant) uniform PushConstants
 {
@@ -38,7 +38,7 @@ const float gaussWeights[kFilterSize] =
 //   for ( int i = 0; i != kFilterSize; i++ ) {
 //     float offset = float(i - kFilterSize/2);
 //     vec2 uv = texCoord + texScaler * (kIsHorizontal ? vec2(offset, 0) : vec2(0, offset));
-//     c += textureBindless2D(pc.texIn, uv).rgb * gaussWeights[i];
+//     c += textureBindless2DLod(pc.texIn, pc.smpl, uv, 0.0).rgb * gaussWeights[i];
 //   }
 //
 //   imageStore(kTextures2DOut[pc.texOut], ivec2(xy), vec4(c, 1.0) );
@@ -46,29 +46,30 @@ const float gaussWeights[kFilterSize] =
 
 void main()
 {
-    const vec2 size = textureBindlessSize2D(pc.texIn).xy;
-    const vec2 xy = gl_GlobalInvocationID.xy;
+    const uvec3 gid = gl_GlobalInvocationID;
+    const uint view_idx = gid.z;
+    const uvec3 size = uvec3(textureBindlessSize2DArray(pc.texIn));
 
-    if (xy.x > size.x || xy.y > size.y)
+    if (gid.x >= size.x || gid.y >= size.y || gid.z >= size.z)
     {
         return;
     }
 
-    const vec2 texCoord = (gl_GlobalInvocationID.xy + vec2(0.5)) / size;
-    const vec2 texel = 1.0 / size;
+    const vec2 texCoord = (vec2(gid.xy) + vec2(0.5)) / vec2(size.xy);
+    const vec2 texel = 1.0 / vec2(size.xy);
 
     const float radius = kIsHorizontal ? 1.5 : 2.5;
 
     vec3 c = vec3(0.0);
-    c += textureBindless2D(pc.texIn, texCoord + texel * vec2(-radius, 0.0)).rgb;
-    c += textureBindless2D(pc.texIn, texCoord + texel * vec2(radius, 0.0)).rgb;
-    c += textureBindless2D(pc.texIn, texCoord + texel * vec2(0.0, -radius)).rgb;
-    c += textureBindless2D(pc.texIn, texCoord + texel * vec2(0.0, radius)).rgb;
-    c += 2.0 * textureBindless2D(pc.texIn, texCoord + texel * vec2(-radius, -radius)).rgb;
-    c += 2.0 * textureBindless2D(pc.texIn, texCoord + texel * vec2(radius, -radius)).rgb;
-    c += 2.0 * textureBindless2D(pc.texIn, texCoord + texel * vec2(-radius, radius)).rgb;
-    c += 2.0 * textureBindless2D(pc.texIn, texCoord + texel * vec2(radius, radius)).rgb;
+    c += textureBindless2DArrayLod(pc.texIn, pc.smpl, texCoord + texel * vec2(-radius, 0.0), view_idx, 0.0).rgb;
+    c += textureBindless2DArrayLod(pc.texIn, pc.smpl, texCoord + texel * vec2(radius, 0.0), view_idx, 0.0).rgb;
+    c += textureBindless2DArrayLod(pc.texIn, pc.smpl, texCoord + texel * vec2(0.0, -radius), view_idx, 0.0).rgb;
+    c += textureBindless2DArrayLod(pc.texIn, pc.smpl, texCoord + texel * vec2(0.0, radius), view_idx, 0.0).rgb;
+    c += 2.0 * textureBindless2DArrayLod(pc.texIn, pc.smpl, texCoord + texel * vec2(-radius, -radius), view_idx, 0.0).rgb;
+    c += 2.0 * textureBindless2DArrayLod(pc.texIn, pc.smpl, texCoord + texel * vec2(radius, -radius), view_idx, 0.0).rgb;
+    c += 2.0 * textureBindless2DArrayLod(pc.texIn, pc.smpl, texCoord + texel * vec2(-radius, radius), view_idx, 0.0).rgb;
+    c += 2.0 * textureBindless2DArrayLod(pc.texIn, pc.smpl, texCoord + texel * vec2(radius, radius), view_idx, 0.0).rgb;
     c *= 1.0 / 12.0;
 
-    imageStore(kTextures2DOut[pc.texOut], ivec2(xy), vec4(c, 1.0));
+    imageStore(kTextures2DOut[pc.texOut], ivec3(gid), vec4(c, 1.0));
 }

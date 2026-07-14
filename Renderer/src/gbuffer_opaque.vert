@@ -23,10 +23,9 @@ void main()
     vec2 in_tc = unpackHalf2x16(in_tc_packed);
     vec3 in_normal = normalize(in_normal_packed.xyz);
     vec4 world = model * vec4(in_pos, 1.0);
-
-    gl_Position = pc.viewProj * world;
-    uv = f16vec2(in_tc.x, 1.0 - in_tc.y);
-    normal = f16vec3(normalize(mat3(model) * in_normal));
+    gl_Position = pc.viewProj[gl_ViewIndex] * world;
+    uv = vec2(in_tc.x, 1.0 - in_tc.y);
+    normal = normalize(mat3(model) * in_normal);
     worldPos = world.xyz / world.w;
     materialId = draw.materialId;
 }

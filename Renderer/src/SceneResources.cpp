@@ -91,25 +91,47 @@ SceneCulling::SceneCulling(const std::unique_ptr<lvk::IContext> &ctx, const Load
     };
 }
 
-CullingData SceneCulling::prepare(const mat4 &proj, const mat4 &cameraView, const SceneDrawLists &drawLists)
-{
-    if (!gSettings.culling.freezeView)
-    {
-        gSettings.culling.view = cameraView;
-    }
+// CullingData SceneCulling::prepare(const mat4 &proj, const mat4 &cameraView, const SceneDrawLists &drawLists)
+// {
+//     if (!gSettings.culling.freezeView)
+//     {
+//         gSettings.culling.view = cameraView;
+//     }
 
-    CullingData cullingData = {
+//     CullingData cullingData = {
+//         .numMeshesToCull = static_cast<uint32_t>(drawLists.opaque.drawCommands_.size()),
+//     };
+//     getFrustumPlanes(proj * gSettings.culling.view, cullingData.frustumPlanes);
+//     getFrustumCorners(proj * gSettings.culling.view, cullingData.frustumCorners);
+//     return cullingData;
+// }
+
+CullingDataXr SceneCulling::prepareXr(const mat4 &projLe, const mat4 &cameraViewLe,const mat4 &projRe, const mat4 &cameraViewRe, const SceneDrawLists &drawLists)
+{
+    // if (!gSettings.culling.freezeView)
+    // {
+    //     gSettings.culling.view = cameraViewLe;
+    // }
+
+    CullingData cullingDataLe = {
         .numMeshesToCull = static_cast<uint32_t>(drawLists.opaque.drawCommands_.size()),
     };
-    getFrustumPlanes(proj * gSettings.culling.view, cullingData.frustumPlanes);
-    getFrustumCorners(proj * gSettings.culling.view, cullingData.frustumCorners);
-    return cullingData;
+    getFrustumPlanes(projLe * cameraViewLe, cullingDataLe.frustumPlanes);
+    getFrustumCorners(projLe * cameraViewLe, cullingDataLe.frustumCorners);
+
+    CullingData cullingDataRe = {
+        .numMeshesToCull = static_cast<uint32_t>(drawLists.opaque.drawCommands_.size()),
+    };
+    getFrustumPlanes(projRe * cameraViewRe, cullingDataRe.frustumPlanes);
+    getFrustumCorners(projRe * cameraViewRe, cullingDataRe.frustumCorners);
+    return CullingDataXr{cullingDataLe, cullingDataRe};
 }
+
 
 namespace
 {
 uint32_t cullDrawListCPU(const std::unique_ptr<lvk::IContext> &ctx, const LoadedScene &loadedScene,
-                         const VKIndirectBuffer11 &drawList, CullingData &cullingData, uint64_t &visibleTriangles)
+                         const VKIndirectBuffer11 &drawList, CullingDataXr &cullingData, uint64_t &visibleTriangles)
 {
     LVK_ASSERT(ctx->getMappedPtr(drawList.bufferIndirect_));
     uint32_t *drawCount = (uint32_t *)ctx->getMappedPtr(drawList.bufferIndirect_);
@@ -119,7 +141,8 @@ uint32_t cullDrawListCPU(const std::unique_ptr<lvk::IContext> &ctx, const Loaded
     {
         DrawIndexedIndirectCommand c = drawList.drawCommands_[i];
         const BoundingBox box = loadedScene.worldBoxes[drawList.drawData_[c.baseInstance].transformId];
-        if (isBoxInFrustum(cullingData.frustumPlanes, cullingData.frustumCorners, box))
+        if (isBoxInFrustum(cullingData.cullingData[0].frustumPlanes, cullingData.cullingData[0].frustumCorners, box) ||
+            isBoxInFrustum(cullingData.cullingData[1].frustumPlanes, cullingData.cullingData[1].frustumCorners, box))
         {
             c.instanceCount = 1;
             visibleCommands++;
@@ -157,9 +180,9 @@ void dispatchCullDrawListGPU(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICo
 }
 } // namespace
 
-void SceneCulling::execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
+void SceneCulling::executeXr(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                            const LoadedScene &loadedScene, const VKMesh11 &mesh, SceneDrawLists &drawLists,
-                           lvk::ComputePipelineHandle pipeline, CullingData cullingData)
+                           lvk::ComputePipelineHandle pipeline, CullingDataXr cullingDataXr)
 {
     if (gSettings.culling.mode == CullingMode_None)
     {
@@ -172,20 +195,20 @@ void SceneCulling::execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::IComm
     {
         numVisibleMeshes = static_cast<uint32_t>(drawLists.transparent.drawCommands_.size());
         numVisibleTriangles = drawLists.transparentTriangles;
-        numVisibleMeshes += cullDrawListCPU(ctx, loadedScene, drawLists.opaque, cullingData, numVisibleTriangles);
-        numVisibleMeshes += cullDrawListCPU(ctx, loadedScene, drawLists.masked, cullingData, numVisibleTriangles);
+        numVisibleMeshes += cullDrawListCPU(ctx, loadedScene, drawLists.opaque, cullingDataXr, numVisibleTriangles);
+        numVisibleMeshes += cullDrawListCPU(ctx, loadedScene, drawLists.masked, cullingDataXr, numVisibleTriangles);
     }
-    else if (gSettings.culling.mode == CullingMode_GPU)
-    {
-        cullingData.numVisibleMeshes = static_cast<uint32_t>(drawLists.transparent.drawCommands_.size());
-        cullingData.numVisibleTriangles = static_cast<uint32_t>(drawLists.transparentTriangles);
+    // else if (gSettings.culling.mode == CullingMode_GPU)
+    // {
+    //     cullingData.numVisibleMeshes = static_cast<uint32_t>(drawLists.transparent.drawCommands_.size());
+    //     cullingData.numVisibleTriangles = static_cast<uint32_t>(drawLists.transparentTriangles);
 
-        buf.cmdBindComputePipeline(pipeline);
-        pc.meshes = ctx->gpuAddress(dataBuffers[currentBufferId]);
-        buf.cmdUpdateBuffer(dataBuffers[currentBufferId], cullingData);
-        dispatchCullDrawListGPU(ctx, buf, drawLists.opaque, pc, dataBuffers[currentBufferId]);
-        dispatchCullDrawListGPU(ctx, buf, drawLists.masked, pc, dataBuffers[currentBufferId]);
-    }
+    //     buf.cmdBindComputePipeline(pipeline);
+    //     pc.meshes = ctx->gpuAddress(dataBuffers[currentBufferId]);
+    //     buf.cmdUpdateBuffer(dataBuffers[currentBufferId], cullingData);
+    //     dispatchCullDrawListGPU(ctx, buf, drawLists.opaque, pc, dataBuffers[currentBufferId]);
+    //     dispatchCullDrawListGPU(ctx, buf, drawLists.masked, pc, dataBuffers[currentBufferId]);
+    // }
 }
 
 void SceneCulling::storeSubmitHandle(lvk::SubmitHandle handle)
@@ -196,16 +219,16 @@ void SceneCulling::storeSubmitHandle(lvk::SubmitHandle handle)
 void SceneCulling::retrieveGpuStats(const std::unique_ptr<lvk::IContext> &ctx, uint32_t numFrames)
 {
     currentBufferId = (currentBufferId + 1) % dataBuffers.size();
-    if (gSettings.culling.mode == CullingMode_GPU && numFrames > 1)
-    {
-        ctx->wait(submitHandles[currentBufferId]);
-        ctx->download(dataBuffers[currentBufferId], &numVisibleMeshes, sizeof(uint32_t),
-                      offsetof(CullingData, numVisibleMeshes));
-        uint32_t visibleTriangles = 0;
-        ctx->download(dataBuffers[currentBufferId], &visibleTriangles, sizeof(uint32_t),
-                      offsetof(CullingData, numVisibleTriangles));
-        numVisibleTriangles = visibleTriangles;
-    }
+    // if (gSettings.culling.mode == CullingMode_GPU && numFrames > 1)
+    // {
+    //     ctx->wait(submitHandles[currentBufferId]);
+    //     ctx->download(dataBuffers[currentBufferId], &numVisibleMeshes, sizeof(uint32_t),
+    //                   offsetof(CullingData, numVisibleMeshes));
+    //     uint32_t visibleTriangles = 0;
+    //     ctx->download(dataBuffers[currentBufferId], &visibleTriangles, sizeof(uint32_t),
+    //                   offsetof(CullingData, numVisibleTriangles));
+    //     numVisibleTriangles = visibleTriangles;
+    // }
 }
 
 LoadedScene loadDemoScene()
@@ -229,44 +252,50 @@ LoadedScene loadDemoScene()
     return loadedScene;
 }
 
-FrameTargets createGBufferTargets(const std::unique_ptr<lvk::IContext> &ctx, lvk::Format depthFormat)
+FrameTargets createGBufferTargets(const std::unique_ptr<lvk::IContext> &ctx, lvk::Format depthFormat,
+                                  lvk::Dimensions sizeFb)
 {
-    const lvk::Dimensions sizeFb = ctx->getDimensions(ctx->getCurrentSwapchainTexture());
     return {
         .sizeFb = sizeFb,
         .sceneColor = ctx->createTexture({
             .format = lvk::Format::Format_R11G11B10_F,
             .dimensions = sizeFb,
+            .numLayers = kMultiViewLayerCount,
             .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
             .debugName = "gbuffer0",
         }),
         .lightingColor = ctx->createTexture({
             .format = lvk::Format::Format_R11G11B10_F,
             .dimensions = sizeFb,
+            .numLayers = kMultiViewLayerCount,
             .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
             .debugName = "lightingColor",
         }),
         .gbufferRT1 = ctx->createTexture({
             .format = lvk::Format::Format_A2B10G10R10_UN,
             .dimensions = sizeFb,
+            .numLayers = kMultiViewLayerCount,
             .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
             .debugName = "gbuffer1",
         }),
         .gbufferRT2 = ctx->createTexture({
             .format = lvk::Format::Format_RGBA_UN8,
             .dimensions = sizeFb,
+            .numLayers = kMultiViewLayerCount,
             .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
             .debugName = "gbuffer2",
         }),
         .gbufferRT3 = ctx->createTexture({
             .format = lvk::Format::Format_RGBA_UN8,
             .dimensions = sizeFb,
+            .numLayers = kMultiViewLayerCount,
             .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
             .debugName = "gbuffer3",
         }),
         .opaqueDepth = ctx->createTexture({
             .format = depthFormat,
             .dimensions = sizeFb,
+            .numLayers = kMultiViewLayerCount,
             .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
             .debugName = "opaqueDepth",
         }),

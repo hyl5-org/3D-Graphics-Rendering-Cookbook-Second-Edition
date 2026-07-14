@@ -51,11 +51,14 @@ constexpr lvk::Format kHDRBloomFormat = lvk::Format_RGBA_F16;
 constexpr lvk::Dimensions kBloomSize = {512, 512};
 constexpr uint32_t kHorizontal = 1;
 constexpr uint32_t kVertical = 0;
+//constexpr uint32_t kMultiViewLayerCount = 1;
+constexpr uint32_t kMultiViewLayerCount = 2; // 2 views for stereo rendering
+constexpr uint32_t kMultiViewViewMask  = 0b11; // 2 views for stereo rendering
 enum CullingMode
 {
     CullingMode_None = 0,
     CullingMode_CPU = 1,
-    CullingMode_GPU = 2,
+    //CullingMode_GPU = 2,
 };
 
 struct DrawSettings
@@ -76,6 +79,7 @@ struct HDRSettings
 {
     bool drawCurves = false;
     bool enableBloom = true;
+    bool enableAdaptation = true;
     float bloomStrength = 0.01f;
     int numBloomPasses = 2;
     float adaptationSpeed = 3.0f;
@@ -83,7 +87,7 @@ struct HDRSettings
 
 struct CullingSettings
 {
-    mat4 view = mat4(1.0f);
+    //mat4 view = mat4(1.0f);
     int mode = CullingMode_CPU;
     bool freezeView = false;
 };
@@ -92,10 +96,24 @@ struct LightParams
 {
     float theta = +90.0f;
     float phi = -26.0f;
+    vec3 color = vec3(1.0f);
+    float intensity = 1.0f;
+    float iblIntensity = 0.25f;
     float depthBiasConst = 1.1f;
     float depthBiasSlope = 2.0f;
 
     bool operator==(const LightParams &) const = default;
+};
+
+struct ViewContext
+{
+    std::array<mat4, kMultiViewLayerCount> view = {mat4(1.0f), mat4(1.0f)};
+    std::array<mat4, kMultiViewLayerCount> projection = {mat4(1.0f), mat4(1.0f)};
+    std::array<mat4, kMultiViewLayerCount> viewProjection = {mat4(1.0f), mat4(1.0f)};
+    std::array<mat4, kMultiViewLayerCount> inverseViewProjection = {mat4(1.0f), mat4(1.0f)};
+    std::array<vec4, kMultiViewLayerCount> cameraPosition = {vec4(0.0f), vec4(0.0f)};
+
+    void update(const VulkanApp &app, float zNear, float zFar);
 };
 
 struct DemoSettings
@@ -105,6 +123,7 @@ struct DemoSettings
     HDRSettings hdr;
     CullingSettings culling;
     LightParams light;
+    ViewContext view;
 };
 
 struct FrameTargets

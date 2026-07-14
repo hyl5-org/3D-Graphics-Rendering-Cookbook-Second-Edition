@@ -12,14 +12,16 @@ layout(std430, buffer_reference) readonly buffer LightBuffer
 {
     mat4 viewProjBias;
     vec4 lightDir;
+    vec4 lightColorIntensity;
     uint shadowTexture;
     uint shadowSampler;
     uint frameIndex;
+    float iblIntensity;
 };
 
 layout(push_constant) uniform PushConstants
 {
-    mat4 invViewProj;
+    mat4 invViewProj[2];
     uint sceneColor;
     uint gbuffer1;
     uint gbuffer2;
@@ -51,23 +53,23 @@ vec3 decodeOctahedron(vec2 e)
 vec3 reconstructWorldPosition(vec2 uv, float depth)
 {
     vec2 ndc = uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0);
-    vec4 world = pc.invViewProj * vec4(ndc, depth, 1.0);
+    vec4 world = pc.invViewProj[gl_ViewIndex] * vec4(ndc, depth, 1.0);
     return world.xyz / world.w;
 }
 
 void main()
 {
-    f16vec3 scene = f16vec3(textureBindless2D(pc.sceneColor, pc.smpl, uv).rgb);
-    float depth = textureBindless2D(pc.depth, pc.smpl, uv).r;
+    f16vec3 scene = f16vec3(textureBindless2DArray(pc.sceneColor, pc.smpl, uv, gl_ViewIndex).rgb);
+    float depth = textureBindless2DArray(pc.depth, pc.smpl, uv, gl_ViewIndex).r;
     if (depth >= 0.9999)
     {
         out_FragColor = vec4(vec3(scene), 1.0);
         return;
     }
 
-    f16vec4 g1 = f16vec4(textureBindless2D(pc.gbuffer1, pc.smpl, uv));
+    f16vec4 g1 = f16vec4(textureBindless2DArray(pc.gbuffer1, pc.smpl, uv, gl_ViewIndex));
     // vec4 g2 = textureBindless2D(pc.gbuffer2, pc.smpl, uv);
-    f16vec4 g3 = f16vec4(textureBindless2D(pc.gbuffer3, pc.smpl, uv));
+    f16vec4 g3 = f16vec4(textureBindless2DArray(pc.gbuffer3, pc.smpl, uv, gl_ViewIndex));
 
     vec3 n = decodeOctahedron(vec2(g1.xy));
     // float metallic = g2.x;
@@ -80,7 +82,9 @@ void main()
     float shadowVisibility = 1.0;
     float ao = float(g3.a);
     vec4 shadowCoords = pc.light.viewProjBias * vec4(worldPos, 1.0);
-    shadowVisibility = shadow(shadowCoords, pc.light.shadowTexture, pc.light.shadowSampler);
+    {
+        shadowVisibility = shadow(shadowCoords, pc.light.shadowTexture, pc.light.shadowSampler);
+    }
 
     vec3 l = -normalize(pc.light.lightDir.xyz);
     float16_t nDotL = float16_t(max(dot(n, l), 0.0));
@@ -100,8 +104,12 @@ void main()
 
     const f16vec3 f0 = f16vec3(0.04);
     f16vec3 diffuseAlbedo = baseColor * (f16vec3(1.0) - f0);
-    f16vec3 indirectDiffuse = ibl * diffuseAlbedo * float16_t(clamp(ao, 0.0, 1.0));
-    f16vec3 directDiffuse = f16vec3(nDotL) * diffuseAlbedo * float16_t(shadowVisibility);
+    f16vec3 indirectDiffuse =
+        ibl * diffuseAlbedo * float16_t(clamp(ao, 0.0, 1.0) * pc.light.iblIntensity);
+    f16vec3 lightColor = f16vec3(pc.light.lightColorIntensity.rgb);
+    float16_t lightIntensity = float16_t(pc.light.lightColorIntensity.a);
+    f16vec3 directDiffuse =
+        lightColor * lightIntensity * f16vec3(nDotL) * diffuseAlbedo * float16_t(shadowVisibility);
     f16vec3 color = scene + indirectDiffuse + directDiffuse;
     out_FragColor = vec4(vec3(color), 1.0);
 }

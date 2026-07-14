@@ -6,6 +6,8 @@
 
 #include <array>
 
+class VulkanApp;
+
 namespace FinalDemo
 {
 
@@ -13,28 +15,33 @@ struct LightData
 {
     mat4 viewProjBias;
     vec4 lightDir;
+    vec4 lightColorIntensity;
     uint32_t shadowTexture;
     uint32_t shadowSampler;
     uint32_t frameIndex;
+    float iblIntensity;
 };
 
 struct MeshPushConstants
 {
-    mat4 viewProj;
-    vec4 cameraPos;
+    mat4 viewProjLt;
+    mat4 viewProjRt;
+    vec4 cameraPos[2];
     uint64_t bufferTransforms;
     uint64_t bufferDrawData;
     uint64_t bufferMaterials;
-    uint64_t bufferOIT;
+    uint64_t bufferOITAtomicCounter;
+    uint64_t bufferOITLists;
+    uint32_t texHeadsOIT;
+    uint32_t maxOITFragments;
     uint64_t bufferLight;
     uint32_t texSkybox;
     uint32_t texSkyboxIrradiance;
 };
 
-
 struct LightingPassPushConstants
 {
-    mat4 invViewProj;
+    mat4 invViewProj[2];
     uint32_t sceneColor;
     uint32_t gbuffer1;
     uint32_t gbuffer2;
@@ -51,7 +58,7 @@ struct HDRPushConstants
     uint32_t texLuminance;
     uint32_t texBloom;
     uint32_t sampler;
-    int drawMode = ToneMapping_Uchimura;
+    int drawMode = ToneMapping_None;
 
     float exposure = 0.95f;
     float bloomStrength = 0.0f;
@@ -86,19 +93,19 @@ struct RenderPipelines
                     lvk::Format shadowMapFormat);
 };
 
-struct ShadowPass
-{
-    lvk::Holder<lvk::TextureHandle> map;
-    lvk::Holder<lvk::SamplerHandle> sampler;
-    lvk::Holder<lvk::BufferHandle> lightBuffer;
-    LightParams previousLight = {.depthBiasConst = 0.0f};
-    uint32_t frameIndex = 0;
+ struct ShadowPass
+ {
+     lvk::Holder<lvk::TextureHandle> map;
+     lvk::Holder<lvk::SamplerHandle> sampler;
+     lvk::Holder<lvk::BufferHandle> lightBuffer;
+     LightParams previousLight = {.depthBiasConst = 0.0f};
+     uint32_t frameIndex = 0;
 
-    explicit ShadowPass(const std::unique_ptr<lvk::IContext> &ctx);
+     explicit ShadowPass(const std::unique_ptr<lvk::IContext> &ctx);
 
-    void updateIfNeeded(lvk::ICommandBuffer &buf, const VKMesh11 &mesh, const RenderPipelines &pipelines,
-                        const LightFrame &lightFrame);
-};
+     void updateIfNeeded(lvk::ICommandBuffer &buf, const VKMesh11 &mesh, const RenderPipelines &pipelines,
+                         const LightFrame &lightFrame);
+ };
 
 struct LightingPass
 {
@@ -106,7 +113,7 @@ struct LightingPass
                  lvk::SamplerHandle samplerClamp, lvk::Format swapchainFormat);
     lvk::TextureHandle execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                                const FrameTargets &targets, const Skybox &skyBox, const ShadowPass &shadows,
-                               const mat4 &view, const mat4 &proj, lvk::SamplerHandle samplerClamp);
+                               lvk::SamplerHandle samplerClamp);
 
     lvk::Holder<lvk::ShaderModuleHandle> vert;
     lvk::Holder<lvk::ShaderModuleHandle> frag;
@@ -123,6 +130,7 @@ struct OITPass
     lvk::Holder<lvk::BufferHandle> fragmentLists;
     lvk::Holder<lvk::TextureHandle> heads;
     lvk::Holder<lvk::BufferHandle> passBuffer;
+    uint32_t maxFragments = 0;
 
     struct TransparentFragment
     {
@@ -137,7 +145,6 @@ struct OITPass
     lvk::TextureHandle combine(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                                const FrameTargets &targets, lvk::TextureHandle texColor);
 };
-
 
 struct HDRPass
 {
@@ -157,29 +164,28 @@ struct HDRPass
     lvk::Holder<lvk::ShaderModuleHandle> fragToneMap;
     lvk::Holder<lvk::RenderPipelineHandle> pipelineToneMap;
     HDRPushConstants pc;
+    bool adaptedLuminanceInitialized = false;
 
     HDRPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets, lvk::SamplerHandle samplerClamp,
             lvk::Format swapchainFormat);
 
     void execute(lvk::ICommandBuffer &buf, lvk::TextureHandle texColor, float deltaSeconds,
-                 lvk::SamplerHandle samplerClamp);
+                lvk::SamplerHandle samplerClamp);
     void runBloom(lvk::ICommandBuffer &buf, lvk::SamplerHandle samplerClamp);
     void runAdaptation(lvk::ICommandBuffer &buf, float deltaSeconds);
-    void toneMap(lvk::ICommandBuffer &buf, const lvk::Framebuffer &framebufferMain);
+    void toneMap(lvk::ICommandBuffer &buf, const lvk::Framebuffer &framebufferMain, lvk::TextureHandle texColor);
     void swapAdaptedLuminance();
 };
 
-void renderGbufferPass(const std::unique_ptr<lvk::IContext> &ctx, VulkanApp &app, lvk::ICommandBuffer &buf,
+void renderGbufferPass(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                        const FrameTargets &targets, const LoadedScene &loadedScene, const Skybox &skyBox,
                        const VKMesh11 &mesh, const RenderPipelines &pipelines, SceneDrawLists &drawLists,
-                       const OITPass &oit, const ShadowPass &shadows, LineCanvas3D &canvas3d, const mat4 &view,
-                       const mat4 &proj, const LightFrame &lightFrame);
+                       const ShadowPass &shadows, LineCanvas3D &canvas3d, const LightFrame &lightFrame);
 
-void renderSkyboxPass(lvk::ICommandBuffer &buf, const FrameTargets &targets, const Skybox &skyBox, const mat4 &view,
-                      const mat4 &proj);
+void renderSkyboxPass(lvk::ICommandBuffer &buf, const FrameTargets &targets, const Skybox &skyBox);
 
-void renderTransparentPass(const std::unique_ptr<lvk::IContext> &ctx, VulkanApp &app, lvk::ICommandBuffer &buf,
+void renderTransparentPass(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                            const FrameTargets &targets, const Skybox &skyBox, const VKMesh11 &mesh,
-                           const RenderPipelines &pipelines, SceneDrawLists &drawLists, const OITPass &oit,
-                           const ShadowPass &shadows, const mat4 &view, const mat4 &proj);
+                           const RenderPipelines &pipelines, SceneDrawLists &drawLists,
+                           const OITPass &oit, const ShadowPass &shadows);
 } // namespace FinalDemo

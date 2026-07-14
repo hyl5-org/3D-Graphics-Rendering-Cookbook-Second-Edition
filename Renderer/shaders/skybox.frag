@@ -2,7 +2,7 @@
 
 layout(push_constant) uniform PerFrameData
 {
-    mat4 mvp;
+    mat4 mvp[2];
     uint texSkybox;
 }
 pc;

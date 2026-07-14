@@ -2,7 +2,7 @@
 
 layout(push_constant) uniform PerFrameData
 {
-    mat4 mvp;
+    mat4 mvp[2];
     uint texSkybox;
 }
 pc;
@@ -24,7 +24,7 @@ const int indices[36] = int[36](0, 1, 2, 2, 3, 0, // front
 void main()
 {
     int idx = indices[gl_VertexIndex];
-    gl_Position = pc.mvp * vec4(1.0 * pos[idx], 1.0);
+    gl_Position = pc.mvp[gl_ViewIndex] * vec4(1.0 * pos[idx], 1.0);
     gl_Position.z = gl_Position.w;
     dir = pos[idx].xyz;
 }

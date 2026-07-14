@@ -30,7 +30,10 @@ struct CullingData
     uint32_t numVisibleMeshes = 0;
     uint32_t numVisibleTriangles = 0;
 };
-
+struct CullingDataXr
+{
+    CullingData cullingData[2];
+};
 struct CullingPushConstants
 {
     uint64_t commands;
@@ -75,18 +78,21 @@ struct SceneCulling
 
     SceneCulling(const std::unique_ptr<lvk::IContext> &ctx, const LoadedScene &loadedScene, const VKMesh11 &mesh);
 
-    CullingData prepare(const mat4 &proj, const mat4 &cameraView, const SceneDrawLists &drawLists);
+    //CullingData prepare(const mat4 &proj, const mat4 &cameraView, const SceneDrawLists &drawLists);
+    CullingDataXr prepareXr(const mat4 &projLe, const mat4 &cameraViewLe,const mat4 &projRe, const mat4 &cameraViewRe, const SceneDrawLists &drawLists);
 
-    void execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf, const LoadedScene &loadedScene,
+    // generate a conservative draw list for stereo rendering
+    void executeXr(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf, const LoadedScene &loadedScene,
                  const VKMesh11 &mesh, SceneDrawLists &drawLists, lvk::ComputePipelineHandle pipeline,
-                 CullingData cullingData);
+                 CullingDataXr cullingData);
 
     void storeSubmitHandle(lvk::SubmitHandle handle);
     void retrieveGpuStats(const std::unique_ptr<lvk::IContext> &ctx, uint32_t numFrames);
 };
 
 LoadedScene loadDemoScene();
-FrameTargets createGBufferTargets(const std::unique_ptr<lvk::IContext> &ctx, lvk::Format depthFormat);
+FrameTargets createGBufferTargets(const std::unique_ptr<lvk::IContext> &ctx, lvk::Format depthFormat,
+                                  lvk::Dimensions sizeFb);
 LightFrame buildLightFrame(const LightParams &light, const BoundingBox &sceneBounds);
 
 } // namespace FinalDemo

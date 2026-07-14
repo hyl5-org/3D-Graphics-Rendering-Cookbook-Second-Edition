@@ -5,6 +5,18 @@ namespace FinalDemo
 
 DemoSettings gSettings;
 
+void ViewContext::update(const VulkanApp &app, float zNear, float zFar)
+{
+    for (uint32_t eye = 0; eye != kMultiViewLayerCount; eye++)
+    {
+        view[eye] = app.getEyeViewMatrix(eye);
+        projection[eye] = app.getEyeProjectionMatrix(eye, zNear, zFar);
+        viewProjection[eye] = projection[eye] * view[eye];
+        inverseViewProjection[eye] = glm::inverse(viewProjection[eye]);
+        cameraPosition[eye] = vec4(app.getEyePosition(eye), 1.0f);
+    }
+}
+
 void installKeyboardShortcuts(VulkanApp &app)
 {
 #if !defined(ANDROID)
@@ -28,10 +40,10 @@ void installKeyboardShortcuts(VulkanApp &app)
             {
                 gSettings.culling.mode = CullingMode_CPU;
             }
-            if (key == GLFW_KEY_G)
-            {
-                gSettings.culling.mode = CullingMode_GPU;
-            }
+            // if (key == GLFW_KEY_G)
+            // {
+            //     gSettings.culling.mode = CullingMode_GPU;
+            // }
         });
 #endif
 }

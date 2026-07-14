@@ -2,7 +2,7 @@
 
 #include <Renderer/shaders/common_oit.sp>
 
-layout(set = 0, binding = 2, r32ui) uniform uimage2D kTextures2DIn[];
+layout(set = 0, binding = 5, r32ui) uniform uimage2DArray kTextures2DIn[];
 
 layout(location = 0) in vec2 uv;
 
@@ -26,7 +26,7 @@ void main()
     TransparentFragment frags[MAX_FRAGMENTS];
 
     uint numFragments = 0;
-    uint idx = imageLoad(kTextures2DIn[pc.texHeadsOIT], ivec2(gl_FragCoord.xy)).r;
+    uint idx = imageLoad(kTextures2DIn[pc.texHeadsOIT], ivec3(ivec2(gl_FragCoord.xy), int(gl_ViewIndex))).r;
 
     // copy the linked list for this fragment into an array
     while (idx != 0xFFFFFFFF && numFragments < MAX_FRAGMENTS)
@@ -50,7 +50,7 @@ void main()
     }
 
     // get the color of the closest non-transparent object from the frame buffer
-    vec4 color = textureBindless2D(pc.texColor, 0, uv);
+    vec4 color = textureBindless2DArray(pc.texColor, 0, uv, gl_ViewIndex);
 
     // traverse the array, and combine the colors using the alpha channel
     for (uint i = 0; i < numFragments; i++)

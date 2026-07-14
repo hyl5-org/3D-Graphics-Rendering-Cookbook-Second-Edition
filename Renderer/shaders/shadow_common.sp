@@ -22,8 +22,11 @@ layout(std430, buffer_reference) readonly buffer MaterialBuffer {
 layout(std430, buffer_reference) readonly buffer LightBuffer {
   mat4 viewProjBias;
   vec4 lightDir;
+  vec4 lightColorIntensity;
   uint shadowTexture;
   uint shadowSampler;
+  uint frameIndex;
+  float iblIntensity;
 };
 
 layout(push_constant) uniform PerFrameData {

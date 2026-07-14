@@ -1,8 +1,8 @@
 /**/
 layout(local_size_x = 1, local_size_y = 1) in;
 
-layout(set = 0, binding = 2, r16f) uniform readonly image2D kTextures2DIn[];
-layout(set = 0, binding = 2, r16f) uniform writeonly image2D kTextures2DOut[];
+layout(set = 0, binding = 5, r16f) uniform readonly image2DArray kTextures2DIn[];
+layout(set = 0, binding = 5, r16f) uniform writeonly image2DArray kTextures2DOut[];
 
 layout(push_constant) uniform PushConstants
 {
@@ -10,16 +10,27 @@ layout(push_constant) uniform PushConstants
     uint texPrevAdaptedLuminance;
     uint texAdaptedOut;
     float adaptationSpeed;
+    uint enableAdaptation;
 }
 pc;
 
 void main()
 {
-    float lumCurr = imageLoad(kTextures2DIn[pc.texCurrSceneLuminance], ivec2(0, 0)).x;
-    float lumPrev = imageLoad(kTextures2DIn[pc.texPrevAdaptedLuminance], ivec2(0, 0)).x;
+    const ivec3 pos = ivec3(0, 0, gl_GlobalInvocationID.z);
+    const int layerCount = imageSize(kTextures2DIn[pc.texCurrSceneLuminance]).z;
+
+    float lumCurr = 0.0;
+    for (int layer = 0; layer != layerCount; layer++)
+    {
+        const ivec3 layerPos = ivec3(0, 0, layer);
+        lumCurr += imageLoad(kTextures2DIn[pc.texCurrSceneLuminance], layerPos).x;
+    }
+    lumCurr /= float(layerCount);
+
+    float lumPrev = imageLoad(kTextures2DIn[pc.texPrevAdaptedLuminance], ivec3(0, 0, 0)).x;
 
     float factor = 1.0 - exp(-pc.adaptationSpeed);
-    float newAdaptation = lumPrev + (lumCurr - lumPrev) * factor;
+    float newAdaptation = pc.enableAdaptation != 0 ? lumPrev + (lumCurr - lumPrev) * factor : lumCurr;
 
-    imageStore(kTextures2DOut[pc.texAdaptedOut], ivec2(0, 0), vec4(newAdaptation));
+    imageStore(kTextures2DOut[pc.texAdaptedOut], pos, vec4(newAdaptation));
 }

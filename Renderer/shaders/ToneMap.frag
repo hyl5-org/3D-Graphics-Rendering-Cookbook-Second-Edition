@@ -100,9 +100,9 @@ vec3 PBRNeutralToneMapping(vec3 color, float startCompression, float desaturatio
 
 void main()
 {
-    vec3 color = textureBindless2D(pc.texColor, pc.smpl, uv).rgb;
-    vec3 bloom = textureBindless2D(pc.texBloom, pc.smpl, uv).rgb;
-    float avgLuminance = textureBindless2D(pc.texLuminance, pc.smpl, vec2(0.5)).r;
+    vec3 color = textureBindless2DArray(pc.texColor, pc.smpl, uv, gl_ViewIndex).rgb;
+    vec3 bloom = pc.bloomStrength > 0.0 ? textureBindless2DArray(pc.texBloom, pc.smpl, uv, gl_ViewIndex).rgb : vec3(0.0);
+    float avgLuminance = textureBindless2DArray(pc.texLuminance, pc.smpl, vec2(0.5), gl_ViewIndex).r;
 
     if (pc.drawMode != ToneMappingMode_None)
     {

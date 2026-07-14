@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../DemoConfig.h"
+
 class Skybox
 {
   public:
@@ -20,16 +22,19 @@ class Skybox
         });
     }
 
-    void draw(lvk::ICommandBuffer &buf, const mat4 &view, const mat4 &proj) const
+    void draw(lvk::ICommandBuffer &buf) const
     {
         buf.cmdPushDebugGroupLabel("Skybox", 0xff0000ff);
         buf.cmdBindRenderPipeline(pipelineSkybox);
         const struct
         {
-            mat4 mvp;
+            mat4 mvp[2];
             uint32_t texSkybox;
         } pc = {
-            .mvp = proj * mat4(mat3(view)), // discard the translation
+            .mvp = {
+                FinalDemo::gSettings.view.projection[0] * mat4(mat3(FinalDemo::gSettings.view.view[0])),
+                FinalDemo::gSettings.view.projection[1] * mat4(mat3(FinalDemo::gSettings.view.view[1])),
+            }, // discard the translation
             .texSkybox = texSkybox.index(),
         };
         buf.cmdPushConstants(pc);

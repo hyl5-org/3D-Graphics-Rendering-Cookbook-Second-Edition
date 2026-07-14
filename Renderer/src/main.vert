@@ -21,7 +21,7 @@ void main()
     mat4 model = pc.transforms.model[draw.transformId];
     vec2 in_tc = unpackHalf2x16(in_tc_packed);
     vec3 in_normal = normalize(in_normal_packed.xyz);
-    gl_Position = pc.viewProj * model * vec4(in_pos, 1.0);
+    gl_Position = pc.viewProj[gl_ViewIndex] * model * vec4(in_pos, 1.0);
     uv = vec2(in_tc.x, 1.0 - in_tc.y);
     normal = normalize(mat3(model) * in_normal);
     vec4 posClip = model * vec4(in_pos, 1.0);

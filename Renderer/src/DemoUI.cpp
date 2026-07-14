@@ -46,7 +46,7 @@ void drawToneMappingCurve(uint32_t width, uint32_t height, const HDRPushConstant
 } // namespace
 
 void drawControls(uint32_t width, uint32_t height, float aspectRatio, SceneCulling &culling, ShadowPass &shadows,
-                  HDRPass &hdr, VulkanApp &app)
+                 HDRPass &hdr, VulkanApp &app)
 {
     const ImGuiViewport *v = ImGui::GetMainViewport();
     const float windowWidth = v->WorkSize.x / 5;
@@ -69,7 +69,7 @@ void drawControls(uint32_t width, uint32_t height, float aspectRatio, SceneCulli
         ImGui::Indent(indentSize);
         ImGui::RadioButton("None (N)", &gSettings.culling.mode, CullingMode_None);
         ImGui::RadioButton("CPU  (C)", &gSettings.culling.mode, CullingMode_CPU);
-        ImGui::RadioButton("GPU  (G)", &gSettings.culling.mode, CullingMode_GPU);
+        //ImGui::RadioButton("GPU  (G)", &gSettings.culling.mode, CullingMode_GPU);
         ImGui::Unindent(indentSize);
         ImGui::Checkbox("Freeze culling frustum (P)", &gSettings.culling.freezeView);
         ImGui::Separator();
@@ -99,6 +99,9 @@ void drawControls(uint32_t width, uint32_t height, float aspectRatio, SceneCulli
         ImGui::Indent(indentSize);
         ImGui::SliderFloat("Theta", &gSettings.light.theta, -180.0f, +180.0f);
         ImGui::SliderFloat("Phi", &gSettings.light.phi, -85.0f, +85.0f);
+        ImGui::ColorEdit3("Color", &gSettings.light.color.x);
+        ImGui::SliderFloat("Intensity", &gSettings.light.intensity, 0.0f, 20.0f);
+        ImGui::SliderFloat("IBL intensity", &gSettings.light.iblIntensity, 0.0f, 2.0f);
         ImGui::Unindent(indentSize);
         ImGui::Image(shadows.map.index(), ImVec2(512, 512));
     }
@@ -109,7 +112,10 @@ void drawControls(uint32_t width, uint32_t height, float aspectRatio, SceneCulli
         ImGui::Indent(indentSize);
         ImGui::Checkbox("Draw tone mapping curves", &gSettings.hdr.drawCurves);
         ImGui::SliderFloat("Exposure", &hdr.pc.exposure, 0.1f, 2.0f);
+        ImGui::Checkbox("Enable adaptation", &gSettings.hdr.enableAdaptation);
+        ImGui::BeginDisabled(!gSettings.hdr.enableAdaptation);
         ImGui::SliderFloat("Adaptation speed", &gSettings.hdr.adaptationSpeed, 1.0f, 10.0f);
+        ImGui::EndDisabled();
         ImGui::Checkbox("Enable bloom", &gSettings.hdr.enableBloom);
         hdr.pc.bloomStrength = gSettings.hdr.enableBloom ? gSettings.hdr.bloomStrength : 0.0f;
         ImGui::BeginDisabled(!gSettings.hdr.enableBloom);

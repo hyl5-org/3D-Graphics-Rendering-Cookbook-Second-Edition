@@ -343,6 +343,7 @@ class VKMesh11
     lvk::Holder<lvk::BufferHandle> bufferTransforms_;
     lvk::Holder<lvk::BufferHandle> bufferDrawData_;
     lvk::Holder<lvk::BufferHandle> bufferMaterials_;
+
     std::vector<DrawData> drawData_;
 
     VKIndirectBuffer11 indirectBuffer_;

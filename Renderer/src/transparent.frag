@@ -7,7 +7,7 @@
 
 layout(early_fragment_tests) in;
 
-layout(set = 0, binding = 2, r32ui) uniform uimage2D kTextures2DInOut[];
+layout(set = 0, binding = 5, r32ui) uniform uimage2DArray kTextures2DInOut[];
 
 layout(location = 0) in vec2 uv;
 layout(location = 1) in vec3 normal;
@@ -45,7 +45,7 @@ void main()
     vec3 sky = vec3(-n.x, n.y, -n.z); // rotate skybox
     vec4 diffuse = (textureBindlessCube(pc.texSkyboxIrradiance, 0, sky) + vec4(NdotL)) * baseColor * (vec4(1.0) - f0);
     // some ad hoc environment reflections for transparent objects
-    vec3 v = normalize(pc.cameraPos.xyz - worldPos);
+    vec3 v = normalize(pc.cameraPos[gl_ViewIndex].xyz - worldPos);
     vec3 reflection = reflect(v, n);
     reflection = vec3(reflection.x, -reflection.y, reflection.z); // rotate reflection
     vec3 colorRefl = textureBindlessCube(pc.texSkybox, 0, reflection).rgb;
@@ -62,7 +62,8 @@ void main()
         uint index = atomicAdd(pc.oit.atomicCounter.numFragments, 1);
         if (index < pc.oit.maxOITFragments)
         {
-            uint prevIndex = imageAtomicExchange(kTextures2DInOut[pc.oit.texHeadsOIT], ivec2(gl_FragCoord.xy), index);
+            const ivec3 headPos = ivec3(ivec2(gl_FragCoord.xy), int(gl_ViewIndex));
+            uint prevIndex = imageAtomicExchange(kTextures2DInOut[pc.oit.texHeadsOIT], headPos, index);
             TransparentFragment frag;
             frag.color = f16vec4(color, alpha);
             frag.depth = gl_FragCoord.z;
