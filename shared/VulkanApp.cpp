@@ -1,11 +1,15 @@
 #include "VulkanApp.h"
 
 #include "UtilsGLTF.h"
+#include <lvk/vulkan/VulkanUtils.h>
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
+#include <cmath>
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 #if defined(ANDROID)
 #include <android/native_window.h>
@@ -262,6 +266,7 @@ VulkanApp::VulkanApp(android_app *androidApp, const VulkanAppConfig &cfg) : andr
     implotCtx_ = ImPlot::CreateContext();
 }
 #else
+
 VulkanApp::VulkanApp(const VulkanAppConfig &cfg) : cfg_(cfg)
 {
     minilog::initialize(nullptr, {.threadNames = false});
@@ -271,17 +276,39 @@ VulkanApp::VulkanApp(const VulkanAppConfig &cfg) : cfg_(cfg)
     // width = 1280;
     // height = 720;
 
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+    if (cfg_.enableOpenXR)
+    {
+        glfwInit();
+        initOpenXR();
+        initXrSession();
+        initXrSwapchain();
+        width_ = static_cast<int>(xrColorSwapchain_.width);
+        height_ = static_cast<int>(xrColorSwapchain_.height);
+        depthTexture_ = ctx_->createTexture({
+            .type = lvk::TextureType_2D,
+            .format = lvk::Format_Z_F32,
+            .dimensions = {static_cast<uint32_t>(width_), static_cast<uint32_t>(height_)},
+            .numLayers = 2,
+            .usage = lvk::TextureUsageBits_Attachment,
+            .debugName = "Depth buffer",
+        });
+        xrLastTimeStamp_ = glfwGetTime();
+        imgui_ = std::make_unique<lvk::ImGuiRenderer>(*ctx_, nullptr, "data/OpenSans-Light.ttf", 30.0f);
+        implotCtx_ = ImPlot::CreateContext();
+        return;
+    }
+#endif
+
     window_ = lvk::initWindow("Simple example", width, height);
-    ctx_ = lvk::createVulkanContextWithSwapchain(window_, width, height,
-                                                 {
-                                                     .enableValidation = false,
-                                                     .enableValidationBestPractices = false,
-                                                 });
+    ctx_ = lvk::createVulkanContextWithSwapchain(window_, width, height, cfg_.contextConfig);
+    width_ = width;
+    height_ = height;
     // recommend to use vulkan configurator on windows
     depthTexture_ = ctx_->createTexture({
         .type = lvk::TextureType_2D,
         .format = lvk::Format_Z_F32,
-        .dimensions = {(uint32_t)width, (uint32_t)height},
+        .dimensions = {static_cast<uint32_t>(width_), static_cast<uint32_t>(height_)},
         .usage = lvk::TextureUsageBits_Attachment,
         .debugName = "Depth buffer",
     });
@@ -372,10 +399,20 @@ VulkanApp::~VulkanApp()
     gridFrag = nullptr;
     imgui_ = nullptr;
     depthTexture_ = nullptr;
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+    if (cfg_.enableOpenXR)
+    {
+        destroyOpenXR();
+        return;
+    }
+#endif
     ctx_ = nullptr;
 
 #if !defined(ANDROID)
-    glfwDestroyWindow(window_);
+    if (window_)
+    {
+        glfwDestroyWindow(window_);
+    }
     glfwTerminate();
 #endif
 }
@@ -383,6 +420,68 @@ VulkanApp::~VulkanApp()
 lvk::Format VulkanApp::getDepthFormat() const
 {
     return ctx_->getFormat(depthTexture_);
+}
+
+lvk::Format VulkanApp::getColorFormat() const
+{
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+    if (cfg_.enableOpenXR)
+    {
+        return lvk::vkFormatToFormat(xrColorSwapchain_.vkFormat);
+    }
+#endif
+    return ctx_->getSwapchainFormat();
+}
+
+lvk::Dimensions VulkanApp::getOutputDimensions() const
+{
+    if (width_ > 0 && height_ > 0)
+    {
+        return {
+            .width = static_cast<uint32_t>(width_),
+            .height = static_cast<uint32_t>(height_),
+        };
+    }
+    return {};
+}
+
+lvk::TextureHandle VulkanApp::getCurrentOutputTexture()
+{
+    if (currentOutputTexture_)
+    {
+        return currentOutputTexture_;
+    }
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+    if (cfg_.enableOpenXR)
+    {
+        currentOutputTexture_ = xrColorSwapchain_.currentTexture();
+        return currentOutputTexture_;
+    }
+#endif
+    currentOutputTexture_ = ctx_->getCurrentSwapchainTexture();
+    return currentOutputTexture_;
+}
+
+lvk::SubmitHandle VulkanApp::submitFrame(lvk::ICommandBuffer &buf)
+{
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+    if (cfg_.enableOpenXR)
+    {
+        const lvk::SubmitHandle handle = ctx_->submit(buf);
+        ctx_->wait(handle);
+        return handle;
+    }
+#endif
+    return ctx_->submit(buf, getCurrentOutputTexture());
+}
+
+bool VulkanApp::isOpenXR() const
+{
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+    return cfg_.enableOpenXR;
+#else
+    return false;
+#endif
 }
 
 void VulkanApp::run(DrawFrameFunc drawFrame)
@@ -431,8 +530,27 @@ void VulkanApp::run(DrawFrameFunc drawFrame)
         }
     }
 #else
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+    if (cfg_.enableOpenXR)
+    {
+        while (!xrShouldQuit_)
+        {
+            pollXrEvents();
+            if (xrShouldQuit_)
+            {
+                break;
+            }
+            if (!renderXrFrame(drawFrame))
+            {
+                break;
+            }
+        }
+        return;
+    }
+#endif
     while (!glfwWindowShouldClose(window_))
     {
+        currentOutputTexture_ = {};
         fpsCounter_.tick(deltaSeconds);
         const double newTimeStamp = glfwGetTime();
         deltaSeconds = static_cast<float>(newTimeStamp - timeStamp);
@@ -470,6 +588,618 @@ void VulkanApp::run(DrawFrameFunc drawFrame)
         }
     }
 #endif
+}
+
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+
+namespace
+{
+glm::quat xrQuatToGlm(const XrQuaternionf &q)
+{
+    return glm::normalize(glm::quat(q.w, q.x, q.y, q.z));
+}
+
+glm::vec3 xrVecToGlm(const XrVector3f &v)
+{
+    return glm::vec3(v.x, v.y, v.z);
+}
+
+glm::mat4 xrPoseToMatrix(const XrPosef &pose)
+{
+    return glm::translate(glm::mat4(1.0f), xrVecToGlm(pose.position)) * glm::mat4_cast(xrQuatToGlm(pose.orientation));
+}
+
+glm::vec3 horizontalDirection(glm::vec3 v, const glm::vec3 &fallback)
+{
+    v.y = 0.0f;
+    const float len = glm::length(v);
+    return len > 0.0001f ? v / len : fallback;
+}
+
+float initialXrYaw(const glm::vec3 &pos, const glm::vec3 &target)
+{
+    glm::vec3 forward = horizontalDirection(target - pos, glm::vec3(0.0f, 0.0f, -1.0f));
+    return std::atan2(-forward.x, -forward.z);
+}
+
+bool xrStringToPathChecked(XrInstance instance, const char *pathText, XrPath *path)
+{
+    const XrResult result = xrStringToPath(instance, pathText, path);
+    if (XR_FAILED(result))
+    {
+        LLOGW("OpenXR path not available: %s (%s)\n", pathText, lvk::xrResultToString(result));
+        *path = XR_NULL_PATH;
+        return false;
+    }
+    return true;
+}
+} // namespace
+
+void VulkanApp::initOpenXR()
+{
+    const char *extensions[] = {
+        XR_KHR_VULKAN_ENABLE_EXTENSION_NAME,
+    };
+
+    const XrInstanceCreateInfo instanceCI = {
+        .type = XR_TYPE_INSTANCE_CREATE_INFO,
+        .applicationInfo =
+            {
+                .applicationName = "Renderer",
+                .applicationVersion = 1,
+                .engineName = "LightweightVK",
+                .engineVersion = 1,
+                .apiVersion = XR_API_VERSION_1_1,
+            },
+        .enabledExtensionCount = 1,
+        .enabledExtensionNames = extensions,
+    };
+
+    const XrResult result = xrCreateInstance(&instanceCI, &xrInstance_);
+    if (XR_FAILED(result))
+    {
+        LLOGW("Failed to create OpenXR instance (%s). Is an OpenXR runtime available?\n",
+              lvk::xrResultToString(result));
+        LVK_ASSERT(false);
+        return;
+    }
+
+    XrInstanceProperties instanceProps = {.type = XR_TYPE_INSTANCE_PROPERTIES};
+    XR_ASSERT(xrGetInstanceProperties(xrInstance_, &instanceProps));
+    LLOGL("OpenXR Runtime: %s v%u.%u.%u\n", instanceProps.runtimeName,
+          XR_VERSION_MAJOR(instanceProps.runtimeVersion), XR_VERSION_MINOR(instanceProps.runtimeVersion),
+          XR_VERSION_PATCH(instanceProps.runtimeVersion));
+
+    const XrSystemGetInfo systemGI = {
+        .type = XR_TYPE_SYSTEM_GET_INFO,
+        .formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY,
+    };
+    const XrResult sysResult = xrGetSystem(xrInstance_, &systemGI, &xrSystemId_);
+    if (sysResult == XR_ERROR_FORM_FACTOR_UNAVAILABLE)
+    {
+        LLOGW("No OpenXR head-mounted display is currently available. Make sure the headset is connected, awake, "
+              "and accepted in the runtime before starting this app.\n");
+        std::exit(EXIT_FAILURE);
+    }
+    if (XR_FAILED(sysResult))
+    {
+        LLOGW("OpenXR error: xrGetSystem() returned %s (%d)\n", lvk::xrResultToString(sysResult),
+              static_cast<int>(sysResult));
+        LVK_ASSERT_MSG(false, "xrGetSystem() failed");
+        std::exit(EXIT_FAILURE);
+    }
+
+    XrSystemProperties systemProps = {.type = XR_TYPE_SYSTEM_PROPERTIES};
+    XR_ASSERT(xrGetSystemProperties(xrInstance_, xrSystemId_, &systemProps));
+    LLOGL("OpenXR System: %s (vendorId=%u)\n", systemProps.systemName, systemProps.vendorId);
+
+    if (!lvk::appendOpenXRVulkanExtensions(xrInstance_, xrSystemId_, cfg_.contextConfig, xrVulkanExts_))
+    {
+        LLOGW("Failed to append OpenXR Vulkan extensions to LVK context config\n");
+        std::exit(EXIT_FAILURE);
+    }
+
+    ctx_ = lvk::createVulkanContextXR(xrInstance_, xrSystemId_, xrGetInstanceProcAddr, cfg_.contextConfig);
+}
+
+void VulkanApp::initXrSession()
+{
+    const lvk::VulkanContext *vkCtx = static_cast<lvk::VulkanContext *>(ctx_.get());
+
+    const XrGraphicsBindingVulkanKHR graphicsBinding = {
+        .type = XR_TYPE_GRAPHICS_BINDING_VULKAN_KHR,
+        .instance = vkCtx->getVkInstance(),
+        .physicalDevice = vkCtx->getVkPhysicalDevice(),
+        .device = vkCtx->getVkDevice(),
+        .queueFamilyIndex = vkCtx->deviceQueues_.graphicsQueueFamilyIndex,
+        .queueIndex = 0,
+    };
+
+    const XrSessionCreateInfo sessionCI = {
+        .type = XR_TYPE_SESSION_CREATE_INFO,
+        .next = &graphicsBinding,
+        .systemId = xrSystemId_,
+    };
+    XR_ASSERT(xrCreateSession(xrInstance_, &sessionCI, &xrSession_));
+
+    const XrReferenceSpaceCreateInfo spaceCI = {
+        .type = XR_TYPE_REFERENCE_SPACE_CREATE_INFO,
+        .referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL,
+        .poseInReferenceSpace =
+            {
+                .orientation = {.x = 0, .y = 0, .z = 0, .w = 1},
+                .position = {.x = 0, .y = 0, .z = 0},
+            },
+    };
+    XR_ASSERT(xrCreateReferenceSpace(xrSession_, &spaceCI, &xrAppSpace_));
+
+    xrPlayerPosition_ = cfg_.initialCameraPos;
+    xrPlayerYaw_ = initialXrYaw(cfg_.initialCameraPos, cfg_.initialCameraTarget);
+    initXrActions();
+}
+
+void VulkanApp::initXrActions()
+{
+    const XrActionSetCreateInfo actionSetCI = {
+        .type = XR_TYPE_ACTION_SET_CREATE_INFO,
+        .actionSetName = "vr_locomotion",
+        .localizedActionSetName = "VR Locomotion",
+        .priority = 0,
+    };
+    XR_ASSERT(xrCreateActionSet(xrInstance_, &actionSetCI, &xrActionSet_));
+
+    xrStringToPathChecked(xrInstance_, "/user/hand/left", &xrLeftHandPath_);
+    xrStringToPathChecked(xrInstance_, "/user/hand/right", &xrRightHandPath_);
+
+    const XrPath leftHandPaths[] = {xrLeftHandPath_};
+    const XrActionCreateInfo moveActionCI = {
+        .type = XR_TYPE_ACTION_CREATE_INFO,
+        .actionName = "move",
+        .actionType = XR_ACTION_TYPE_VECTOR2F_INPUT,
+        .countSubactionPaths = 1,
+        .subactionPaths = leftHandPaths,
+        .localizedActionName = "Move",
+    };
+    XR_ASSERT(xrCreateAction(xrActionSet_, &moveActionCI, &xrMoveAction_));
+
+    const XrPath rightHandPaths[] = {xrRightHandPath_};
+    const XrActionCreateInfo turnActionCI = {
+        .type = XR_TYPE_ACTION_CREATE_INFO,
+        .actionName = "turn",
+        .actionType = XR_ACTION_TYPE_VECTOR2F_INPUT,
+        .countSubactionPaths = 1,
+        .subactionPaths = rightHandPaths,
+        .localizedActionName = "Turn",
+    };
+    XR_ASSERT(xrCreateAction(xrActionSet_, &turnActionCI, &xrTurnAction_));
+
+    const auto suggestThumbstickBindings = [&](const char *profilePath, const char *leftPath, const char *rightPath)
+    {
+        XrPath profile = XR_NULL_PATH;
+        XrPath left = XR_NULL_PATH;
+        XrPath right = XR_NULL_PATH;
+        if (!xrStringToPathChecked(xrInstance_, profilePath, &profile) ||
+            !xrStringToPathChecked(xrInstance_, leftPath, &left) ||
+            !xrStringToPathChecked(xrInstance_, rightPath, &right))
+        {
+            return;
+        }
+
+        const XrActionSuggestedBinding bindings[] = {
+            {.action = xrMoveAction_, .binding = left},
+            {.action = xrTurnAction_, .binding = right},
+        };
+        const XrInteractionProfileSuggestedBinding suggestedBindings = {
+            .type = XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING,
+            .interactionProfile = profile,
+            .countSuggestedBindings = 2,
+            .suggestedBindings = bindings,
+        };
+        const XrResult result = xrSuggestInteractionProfileBindings(xrInstance_, &suggestedBindings);
+        if (XR_FAILED(result))
+        {
+            LLOGW("OpenXR could not suggest bindings for %s (%s)\n", profilePath, lvk::xrResultToString(result));
+        }
+    };
+
+    suggestThumbstickBindings("/interaction_profiles/oculus/touch_controller",
+                              "/user/hand/left/input/thumbstick", "/user/hand/right/input/thumbstick");
+    suggestThumbstickBindings("/interaction_profiles/valve/index_controller",
+                              "/user/hand/left/input/thumbstick", "/user/hand/right/input/thumbstick");
+    suggestThumbstickBindings("/interaction_profiles/microsoft/motion_controller",
+                              "/user/hand/left/input/thumbstick", "/user/hand/right/input/thumbstick");
+    suggestThumbstickBindings("/interaction_profiles/htc/vive_cosmos_controller",
+                              "/user/hand/left/input/thumbstick", "/user/hand/right/input/thumbstick");
+
+    const XrActionSet actionSets[] = {xrActionSet_};
+    const XrSessionActionSetsAttachInfo attachInfo = {
+        .type = XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO,
+        .countActionSets = 1,
+        .actionSets = actionSets,
+    };
+    XR_ASSERT(xrAttachSessionActionSets(xrSession_, &attachInfo));
+}
+
+void VulkanApp::initXrSwapchain()
+{
+    uint32_t numViews = 0;
+    XR_ASSERT(
+        xrEnumerateViewConfigurationViews(xrInstance_, xrSystemId_, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 0,
+                                          &numViews, nullptr));
+    xrConfigViews_.resize(numViews, {.type = XR_TYPE_VIEW_CONFIGURATION_VIEW});
+    XR_ASSERT(xrEnumerateViewConfigurationViews(xrInstance_, xrSystemId_, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
+                                                numViews, &numViews, xrConfigViews_.data()));
+    LVK_ASSERT(numViews == 2);
+
+    LLOGL("OpenXR view config: %ux%u (recommended), %ux%u (max)\n",
+          xrConfigViews_[0].recommendedImageRectWidth, xrConfigViews_[0].recommendedImageRectHeight,
+          xrConfigViews_[0].maxImageRectWidth, xrConfigViews_[0].maxImageRectHeight);
+
+    LVK_VERIFY(xrColorSwapchain_.create(ctx_.get(), xrSession_, xrConfigViews_.data(), "XR color array swapchain"));
+}
+
+void VulkanApp::destroyOpenXR()
+{
+    if (ctx_)
+    {
+        ctx_->wait({});
+        xrColorSwapchain_.destroy(ctx_.get());
+    }
+    if (xrAppSpace_)
+    {
+        xrDestroySpace(xrAppSpace_);
+        xrAppSpace_ = XR_NULL_HANDLE;
+    }
+    if (xrMoveAction_)
+    {
+        xrDestroyAction(xrMoveAction_);
+        xrMoveAction_ = XR_NULL_HANDLE;
+    }
+    if (xrTurnAction_)
+    {
+        xrDestroyAction(xrTurnAction_);
+        xrTurnAction_ = XR_NULL_HANDLE;
+    }
+    if (xrActionSet_)
+    {
+        xrDestroyActionSet(xrActionSet_);
+        xrActionSet_ = XR_NULL_HANDLE;
+    }
+    if (xrSession_)
+    {
+        xrDestroySession(xrSession_);
+        xrSession_ = XR_NULL_HANDLE;
+    }
+    ctx_ = nullptr;
+    if (xrInstance_)
+    {
+        xrDestroyInstance(xrInstance_);
+        xrInstance_ = XR_NULL_HANDLE;
+    }
+#if !defined(ANDROID)
+    glfwTerminate();
+#endif
+}
+
+void VulkanApp::pollXrEvents()
+{
+    XrEventDataBuffer event = {.type = XR_TYPE_EVENT_DATA_BUFFER};
+    XrResult pollResult = XR_SUCCESS;
+    while ((pollResult = xrPollEvent(xrInstance_, &event)) == XR_SUCCESS)
+    {
+        switch (event.type)
+        {
+        case XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED:
+        {
+            const XrEventDataSessionStateChanged *stateEvent =
+                reinterpret_cast<const XrEventDataSessionStateChanged *>(&event);
+            xrSessionState_ = stateEvent->state;
+            LLOGL("OpenXR session state: %s\n", lvk::xrSessionStateToString(xrSessionState_));
+            switch (xrSessionState_)
+            {
+            case XR_SESSION_STATE_READY:
+            {
+                const XrSessionBeginInfo beginInfo = {
+                    .type = XR_TYPE_SESSION_BEGIN_INFO,
+                    .primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
+                };
+                XR_ASSERT(xrBeginSession(xrSession_, &beginInfo));
+                xrSessionRunning_ = true;
+                break;
+            }
+            case XR_SESSION_STATE_STOPPING:
+                XR_ASSERT(xrEndSession(xrSession_));
+                xrSessionRunning_ = false;
+                break;
+            case XR_SESSION_STATE_EXITING:
+            case XR_SESSION_STATE_LOSS_PENDING:
+                xrShouldQuit_ = true;
+                break;
+            default:
+                break;
+            }
+            break;
+        }
+        case XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING:
+            xrShouldQuit_ = true;
+            break;
+        default:
+            break;
+        }
+        event = {.type = XR_TYPE_EVENT_DATA_BUFFER};
+    }
+    if (pollResult != XR_EVENT_UNAVAILABLE)
+    {
+        LLOGW("OpenXR error: xrPollEvent() returned %s (%d)\n", lvk::xrResultToString(pollResult),
+              static_cast<int>(pollResult));
+    }
+}
+
+void VulkanApp::syncXrActions()
+{
+    xrMoveInput_ = vec2(0.0f);
+    xrTurnInput_ = vec2(0.0f);
+
+    if (!xrActionSet_)
+    {
+        return;
+    }
+
+    const XrActiveActionSet activeActionSet = {
+        .actionSet = xrActionSet_,
+        .subactionPath = XR_NULL_PATH,
+    };
+    const XrActionsSyncInfo syncInfo = {
+        .type = XR_TYPE_ACTIONS_SYNC_INFO,
+        .countActiveActionSets = 1,
+        .activeActionSets = &activeActionSet,
+    };
+    XR_ASSERT(xrSyncActions(xrSession_, &syncInfo));
+
+    auto getVector2 = [&](XrAction action, XrPath subactionPath)
+    {
+        XrActionStateVector2f state = {.type = XR_TYPE_ACTION_STATE_VECTOR2F};
+        const XrActionStateGetInfo getInfo = {
+            .type = XR_TYPE_ACTION_STATE_GET_INFO,
+            .action = action,
+            .subactionPath = subactionPath,
+        };
+        XR_ASSERT(xrGetActionStateVector2f(xrSession_, &getInfo, &state));
+        return state.isActive ? vec2(state.currentState.x, state.currentState.y) : vec2(0.0f);
+    };
+
+    xrMoveInput_ = getVector2(xrMoveAction_, xrLeftHandPath_);
+    xrTurnInput_ = getVector2(xrTurnAction_, xrRightHandPath_);
+}
+
+void VulkanApp::updateXrLocomotion(float deltaSeconds)
+{
+    constexpr float kDeadZone = 0.18f;
+    constexpr float kMoveSpeed = 2.0f;
+    constexpr float kTurnActivate = 0.75f;
+    constexpr float kTurnRelease = 0.25f;
+    constexpr float kSnapTurnRadians = glm::radians(30.0f);
+
+    const glm::quat yawRotation = glm::angleAxis(xrPlayerYaw_, vec3(0.0f, 1.0f, 0.0f));
+    const glm::quat headRotation = xrQuatToGlm(xrViews_[0].pose.orientation);
+    const glm::quat worldHeadRotation = yawRotation * headRotation;
+
+    const vec3 forward = horizontalDirection(worldHeadRotation * vec3(0.0f, 0.0f, -1.0f), vec3(0.0f, 0.0f, -1.0f));
+    const vec3 right = horizontalDirection(worldHeadRotation * vec3(1.0f, 0.0f, 0.0f), vec3(1.0f, 0.0f, 0.0f));
+
+    vec2 move = xrMoveInput_;
+    if (glm::length(move) < kDeadZone)
+    {
+        move = vec2(0.0f);
+    }
+    else
+    {
+        const float len = std::min(glm::length(move), 1.0f);
+        move = glm::normalize(move) * len;
+    }
+    xrPlayerPosition_ += (right * move.x + forward * move.y) * kMoveSpeed * deltaSeconds;
+
+    const float turn = xrTurnInput_.x;
+    if (std::abs(turn) < kTurnRelease)
+    {
+        xrSnapTurnReady_ = true;
+    }
+    else if (xrSnapTurnReady_ && std::abs(turn) > kTurnActivate)
+    {
+        xrPlayerYaw_ += turn > 0.0f ? -kSnapTurnRadians : kSnapTurnRadians;
+        xrSnapTurnReady_ = false;
+    }
+}
+
+mat4 VulkanApp::getXrWorldFromLocalMatrix() const
+{
+    return glm::translate(mat4(1.0f), xrPlayerPosition_) *
+           glm::rotate(mat4(1.0f), xrPlayerYaw_, vec3(0.0f, 1.0f, 0.0f));
+}
+
+mat4 VulkanApp::getXrLocalFromViewMatrix(uint32_t eye) const
+{
+    return xrPoseToMatrix(xrViews_[std::min<uint32_t>(eye, 1)].pose);
+}
+
+mat4 VulkanApp::getXrProjectionMatrix(uint32_t eye, float zNear, float zFar) const
+{
+    const XrFovf &fov = xrViews_[std::min<uint32_t>(eye, 1)].fov;
+    const float tanLeft = std::tan(fov.angleLeft);
+    const float tanRight = std::tan(fov.angleRight);
+    const float tanDown = std::tan(fov.angleDown);
+    const float tanUp = std::tan(fov.angleUp);
+    const float tanWidth = tanRight - tanLeft;
+    const float tanHeight = tanUp - tanDown;
+
+    mat4 result(0.0f);
+    result[0][0] = 2.0f / tanWidth;
+    result[1][1] = 2.0f / tanHeight;
+    result[2][0] = (tanRight + tanLeft) / tanWidth;
+    result[2][1] = (tanUp + tanDown) / tanHeight;
+    result[2][2] = -zFar / (zFar - zNear);
+    result[2][3] = -1.0f;
+    result[3][2] = -(zFar * zNear) / (zFar - zNear);
+    return result;
+}
+
+vec3 VulkanApp::getXrEyeWorldPosition(uint32_t eye) const
+{
+    const mat4 worldFromEye = getXrWorldFromLocalMatrix() * getXrLocalFromViewMatrix(eye);
+    return vec3(worldFromEye[3]);
+}
+
+bool VulkanApp::renderXrFrame(DrawFrameFunc &drawFrame)
+{
+    if (!xrSessionRunning_)
+    {
+        static double lastWaitLogTime = 0.0;
+        const double now = glfwGetTime();
+        if (now - lastWaitLogTime > 1.0)
+        {
+            LLOGL("Waiting for OpenXR session to become READY; current state: %s\n",
+                  lvk::xrSessionStateToString(xrSessionState_));
+            lastWaitLogTime = now;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        return true;
+    }
+
+    const XrFrameWaitInfo frameWaitInfo = {.type = XR_TYPE_FRAME_WAIT_INFO};
+    XrFrameState frameState = {.type = XR_TYPE_FRAME_STATE};
+    XR_ASSERT(xrWaitFrame(xrSession_, &frameWaitInfo, &frameState));
+
+    const double now = glfwGetTime();
+    const float deltaSeconds = static_cast<float>(now - xrLastTimeStamp_);
+    xrLastTimeStamp_ = now;
+    fpsCounter_.tick(deltaSeconds);
+
+    const XrFrameBeginInfo frameBeginInfo = {.type = XR_TYPE_FRAME_BEGIN_INFO};
+    XR_ASSERT(xrBeginFrame(xrSession_, &frameBeginInfo));
+
+    if (!frameState.shouldRender)
+    {
+        ctx_->wait({});
+        const XrFrameEndInfo frameEndInfo = {
+            .type = XR_TYPE_FRAME_END_INFO,
+            .displayTime = frameState.predictedDisplayTime,
+            .environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE,
+        };
+        XR_ASSERT(xrEndFrame(xrSession_, &frameEndInfo));
+        return true;
+    }
+
+    const XrViewLocateInfo viewLocateInfo = {
+        .type = XR_TYPE_VIEW_LOCATE_INFO,
+        .viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
+        .displayTime = frameState.predictedDisplayTime,
+        .space = xrAppSpace_,
+    };
+
+    XrViewState viewState = {.type = XR_TYPE_VIEW_STATE};
+    uint32_t numViews = 2;
+    xrViews_[0] = {.type = XR_TYPE_VIEW};
+    xrViews_[1] = {.type = XR_TYPE_VIEW};
+    XR_ASSERT(xrLocateViews(xrSession_, &viewLocateInfo, &viewState, 2, &numViews, xrViews_));
+    LVK_ASSERT(numViews == 2);
+    xrViewsValid_ = true;
+    syncXrActions();
+    updateXrLocomotion(deltaSeconds);
+
+    if (!xrColorSwapchain_.acquire())
+    {
+        return false;
+    }
+
+    currentOutputTexture_ = xrColorSwapchain_.currentTexture();
+    width_ = static_cast<int>(xrColorSwapchain_.width);
+    height_ = static_cast<int>(xrColorSwapchain_.height);
+
+    drawFrame(xrColorSwapchain_.width, xrColorSwapchain_.height,
+              xrColorSwapchain_.width / static_cast<float>(xrColorSwapchain_.height), deltaSeconds);
+    ctx_->wait({});
+
+    xrColorSwapchain_.release();
+    currentOutputTexture_ = {};
+
+    XrCompositionLayerProjectionView projectionViews[2] = {
+        {.type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},
+        {.type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},
+    };
+    xrColorSwapchain_.fillProjectionViews(xrViews_, projectionViews);
+
+    const XrCompositionLayerProjection projectionLayer = {
+        .type = XR_TYPE_COMPOSITION_LAYER_PROJECTION,
+        .space = xrAppSpace_,
+        .viewCount = 2,
+        .views = projectionViews,
+    };
+    const XrCompositionLayerBaseHeader *layers[] = {
+        reinterpret_cast<const XrCompositionLayerBaseHeader *>(&projectionLayer)};
+
+    const XrFrameEndInfo frameEndInfo = {
+        .type = XR_TYPE_FRAME_END_INFO,
+        .displayTime = frameState.predictedDisplayTime,
+        .environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE,
+        .layerCount = 1,
+        .layers = layers,
+    };
+    XR_ASSERT(xrEndFrame(xrSession_, &frameEndInfo));
+
+    return true;
+}
+
+#endif
+
+mat4 VulkanApp::getEyeViewMatrix(uint32_t eye) const
+{
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+    if (cfg_.enableOpenXR && xrViewsValid_)
+    {
+        const mat4 worldFromEye = getXrWorldFromLocalMatrix() * getXrLocalFromViewMatrix(eye);
+        return glm::inverse(worldFromEye);
+    }
+#else
+    (void)eye;
+#endif
+    assert(false);
+    return {};
+}
+
+mat4 VulkanApp::getEyeProjectionMatrix(uint32_t eye, float zNear, float zFar) const
+{
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+    if (cfg_.enableOpenXR && xrViewsValid_)
+    {
+        return getXrProjectionMatrix(eye, zNear, zFar);
+    }
+#else
+    (void)eye;
+    (void)zNear;
+    (void)zFar;
+#endif
+    assert(false);
+    return {};
+}
+
+mat4 VulkanApp::getEyeViewProjectionMatrix(uint32_t eye,
+                                           float zNear, float zFar) const
+{
+    return getEyeProjectionMatrix(eye, zNear, zFar) * getEyeViewMatrix(eye);
+}
+
+vec3 VulkanApp::getEyePosition(uint32_t eye) const
+{
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+    if (cfg_.enableOpenXR && xrViewsValid_)
+    {
+        return getXrEyeWorldPosition(eye);
+    }
+#else
+    (void)eye;
+#endif
+    assert(false);
+    return {};
 }
 
 void VulkanApp::drawMemo()
@@ -758,7 +1488,7 @@ void VulkanApp::drawGrid(lvk::ICommandBuffer &buf, const mat4 &mvp, const vec3 &
             .smVert = gridVert,
             .smFrag = gridFrag,
             .color = {{
-                .format = colorFormat != lvk::Format_Invalid ? colorFormat : ctx_->getSwapchainFormat(),
+                .format = colorFormat != lvk::Format_Invalid ? colorFormat : getColorFormat(),
                 .blendEnabled = true,
                 .srcRGBBlendFactor = lvk::BlendFactor_SrcAlpha,
                 .dstRGBBlendFactor = lvk::BlendFactor_OneMinusSrcAlpha,

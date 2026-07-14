@@ -19,6 +19,7 @@ double glfwGetTime();
 #include <stb/stb_image_write.h>
 
 #include "shared/UtilsFPS.h"
+#include "shared/OpenXRArraySwapchain.h"
 #include <shared/Bitmap.h>
 #include <shared/Camera.h>
 #include <shared/Graph.h>
@@ -26,6 +27,7 @@ double glfwGetTime();
 #include <shared/UtilsCubemap.h>
 
 #include <functional>
+#include <array>
 
 using glm::mat3;
 using glm::mat4;
@@ -80,6 +82,10 @@ struct VulkanAppConfig
     vec3 initialCameraPos = vec3(0.0f, 0.0f, -2.5f);
     vec3 initialCameraTarget = vec3(0.0f, 0.0f, 0.0f);
     bool showGLTFInspector = false;
+    lvk::ContextConfig contextConfig = {.enableValidation = false, .enableValidationBestPractices = false};
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+    bool enableOpenXR = false;
+#endif
 };
 
 class VulkanApp
@@ -105,6 +111,16 @@ class VulkanApp
     virtual void drawGTFInspector_Cameras(GLTFIntrospective &intro);
 
     lvk::Format getDepthFormat() const;
+    lvk::Format getColorFormat() const;
+    lvk::Dimensions getOutputDimensions() const;
+    lvk::TextureHandle getCurrentOutputTexture();
+    lvk::SubmitHandle submitFrame(lvk::ICommandBuffer &buf);
+    bool isOpenXR() const;
+    mat4 getEyeViewMatrix(uint32_t eye) const;
+    mat4 getEyeProjectionMatrix(uint32_t eye, float zNear, float zFar) const;
+    mat4 getEyeViewProjectionMatrix(uint32_t eye, float zNear,
+                                    float zFar) const;
+    vec3 getEyePosition(uint32_t eye) const;
     lvk::TextureHandle getDepthTexture() const
     {
         return depthTexture_;
@@ -135,7 +151,7 @@ class VulkanApp
     std::unique_ptr<lvk::ImGuiRenderer> imgui_;
     ImPlotContext *implotCtx_ = nullptr;
 
-    const VulkanAppConfig cfg_ = {};
+    VulkanAppConfig cfg_ = {};
 
     CameraPositioner_FirstPerson positioner_ = {cfg_.initialCameraPos, cfg_.initialCameraTarget,
                                                 vec3(0.0f, 1.0f, 0.0f)};
@@ -153,9 +169,51 @@ class VulkanApp
     lvk::Holder<lvk::RenderPipelineHandle> gridPipeline = {};
 
     uint32_t pipelineSamples = 1;
+    lvk::TextureHandle currentOutputTexture_ = {};
 
 #if !defined(ANDROID)
     std::vector<GLFWmousebuttonfun> callbacksMouseButton;
     std::vector<GLFWkeyfun> callbacksKey;
+#endif
+
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+    void initOpenXR();
+    void initXrSession();
+    void initXrActions();
+    void initXrSwapchain();
+    void destroyOpenXR();
+    void pollXrEvents();
+    bool renderXrFrame(DrawFrameFunc &drawFrame);
+    void syncXrActions();
+    void updateXrLocomotion(float deltaSeconds);
+    mat4 getXrWorldFromLocalMatrix() const;
+    mat4 getXrLocalFromViewMatrix(uint32_t eye) const;
+    mat4 getXrProjectionMatrix(uint32_t eye, float zNear, float zFar) const;
+    vec3 getXrEyeWorldPosition(uint32_t eye) const;
+
+    XrInstance xrInstance_ = XR_NULL_HANDLE;
+    XrSystemId xrSystemId_ = XR_NULL_SYSTEM_ID;
+    XrSession xrSession_ = XR_NULL_HANDLE;
+    XrSpace xrAppSpace_ = XR_NULL_HANDLE;
+    XrSessionState xrSessionState_ = XR_SESSION_STATE_UNKNOWN;
+    bool xrSessionRunning_ = false;
+    bool xrShouldQuit_ = false;
+    double xrLastTimeStamp_ = 0.0;
+
+    lvk::OpenXRVulkanExtensionStrings xrVulkanExts_;
+    std::vector<XrViewConfigurationView> xrConfigViews_;
+    XrView xrViews_[2] = {{.type = XR_TYPE_VIEW}, {.type = XR_TYPE_VIEW}};
+    OpenXRArraySwapchain xrColorSwapchain_;
+    XrActionSet xrActionSet_ = XR_NULL_HANDLE;
+    XrAction xrMoveAction_ = XR_NULL_HANDLE;
+    XrAction xrTurnAction_ = XR_NULL_HANDLE;
+    XrPath xrLeftHandPath_ = XR_NULL_PATH;
+    XrPath xrRightHandPath_ = XR_NULL_PATH;
+    vec2 xrMoveInput_ = vec2(0.0f);
+    vec2 xrTurnInput_ = vec2(0.0f);
+    vec3 xrPlayerPosition_ = vec3(0.0f);
+    float xrPlayerYaw_ = 0.0f;
+    bool xrSnapTurnReady_ = true;
+    bool xrViewsValid_ = false;
 #endif
 };

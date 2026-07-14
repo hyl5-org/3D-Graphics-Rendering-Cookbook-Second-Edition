@@ -39,7 +39,7 @@ android {
                   '-DLVK_WITH_TRACY_GPU=OFF',
                   '-DLVK_WITH_WAYLAND=OFF',
                   '-DLVK_WITH_IMPLOT=ON',
-                  '-DLVK_WITH_OPENXR=OFF',
+                  '-DLVK_WITH_OPENXR=ON',
                   '-DPython3_EXECUTABLE=@COOKBOOK_ANDROID_PYTHON3@'
       }
     }
