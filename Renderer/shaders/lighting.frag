@@ -14,13 +14,6 @@ layout(std430, buffer_reference) readonly buffer LightBuffer
     vec4 lightDir;
     uint shadowTexture;
     uint shadowSampler;
-    uint rtShadowEnabled;
-    uint rtAOEnabled;
-    uint rtAOSamples;
-    float rtAORadius;
-    float rtAOPower;
-    float rtShadowStrength;
-    float rtShadowRadius;
     uint frameIndex;
 };
 
@@ -33,7 +26,6 @@ layout(push_constant) uniform PushConstants
     uint gbuffer3;
     uint depth;
     uint texSkyboxIrradiance;
-    uint texRTShadowAO;
     uint smpl;
     LightBuffer light;
 }
@@ -88,26 +80,7 @@ void main()
     float shadowVisibility = 1.0;
     float ao = float(g3.a);
     vec4 shadowCoords = pc.light.viewProjBias * vec4(worldPos, 1.0);
-    if (pc.texRTShadowAO != 0)
-    {
-        vec2 rtData = textureBindless2D(pc.texRTShadowAO, pc.smpl, uv).rg;
-        if (pc.light.rtShadowEnabled != 0)
-        {
-            shadowVisibility = rtData.r;
-        }
-        else
-        {
-            shadowVisibility = shadow(shadowCoords, pc.light.shadowTexture, pc.light.shadowSampler);
-        }
-        if (pc.light.rtAOEnabled != 0)
-        {
-            ao *= rtData.g;
-        }
-    }
-    else
-    {
-        shadowVisibility = shadow(shadowCoords, pc.light.shadowTexture, pc.light.shadowSampler);
-    }
+    shadowVisibility = shadow(shadowCoords, pc.light.shadowTexture, pc.light.shadowSampler);
 
     vec3 l = -normalize(pc.light.lightDir.xyz);
     float16_t nDotL = float16_t(max(dot(n, l), 0.0));

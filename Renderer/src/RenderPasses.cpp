@@ -52,8 +52,7 @@ ShadowPass::ShadowPass(const std::unique_ptr<lvk::IContext> &ctx)
 void ShadowPass::updateIfNeeded(lvk::ICommandBuffer &buf, const VKMesh11 &mesh, const RenderPipelines &pipelines,
                                 const LightFrame &lightFrame)
 {
-    const bool useRTShadow = mesh.rayTracing_.valid() && gSettings.rayTracing.shadows;
-    if (!useRTShadow && previousLight != gSettings.light)
+    if (previousLight != gSettings.light)
     {
         previousLight = gSettings.light;
         buf.cmdBeginRendering(lvk::RenderPass{.depth = {.loadOp = lvk::LoadOp_Clear, .clearDepth = 1.0f}},
@@ -79,288 +78,8 @@ void ShadowPass::updateIfNeeded(lvk::ICommandBuffer &buf, const VKMesh11 &mesh, 
                             .lightDir = vec4(lightFrame.dir, 0.0f),
                             .shadowTexture = map.index(),
                             .shadowSampler = sampler.index(),
-                            .rtShadowEnabled = (mesh.rayTracing_.valid() && gSettings.rayTracing.shadows) ? 1u : 0u,
-                            .rtAOEnabled = (mesh.rayTracing_.valid() && gSettings.rayTracing.ao) ? 1u : 0u,
-                            .rtAOSamples = static_cast<uint32_t>(std::max(gSettings.rayTracing.aoSamples, 1)),
-                            .rtAORadius = gSettings.rayTracing.aoRadius,
-                            .rtAOPower = gSettings.rayTracing.aoPower,
-                            .rtShadowStrength = gSettings.rayTracing.shadowStrength,
-                            .rtShadowRadius = gSettings.rayTracing.shadowRadius,
                             .frameIndex = frameIndex++,
                         });
-}
-
-RTShadowAOPass::RTShadowAOPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets,
-                               lvk::Format swapchainFormat)
-{
-    uint32_t rtDownsampleScale = 2;
-    vert = loadShaderModule(ctx, "data/shaders/QuadFlip.vert");
-    frag = loadShaderModule(ctx, "Renderer/shaders/rt_shadow_ao.frag");
-    pipeline = ctx->createRenderPipeline({
-        .smVert = vert,
-        .smFrag = frag,
-        .color = {{.format = lvk::Format_RG_UN8}},
-        .debugName = "Pipeline: RT Shadow/AO",
-    });
-    const lvk::Dimensions Res = {.width = targets.sizeFb.width / rtDownsampleScale,
-                                 .height = targets.sizeFb.height / rtDownsampleScale};
-    rtResult = ctx->createTexture({
-        .format = lvk::Format_RG_UN8,
-        .dimensions = Res,
-        .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
-        .debugName = "RT Shadow/AO",
-    });
-    blueNoise = loadTexture(ctx, "data/blue_noise_128x128x64.png");
-
-    // Denoise textures
-    halfRes = Res;
-    const lvk::TextureDesc historyDesc = {
-        .format = lvk::Format_RG_UN8,
-        .dimensions = Res,
-        .usage = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
-        .debugName = "RT History",
-    };
-    rtHistory[0] = ctx->createTexture(historyDesc, "RT History 0");
-    rtHistory[1] = ctx->createTexture(historyDesc, "RT History 1");
-    rtDenoised = ctx->createTexture({
-        .format = lvk::Format_RG_UN8,
-        .dimensions = Res,
-        .usage = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
-        .debugName = "RT Denoised",
-    });
-    prevDepth = ctx->createTexture({
-        .format = lvk::Format::Format_Z_F32,
-        .dimensions = targets.sizeFb,
-        .usage = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Attachment,
-        .debugName = "RT Prev Depth",
-    });
-
-    // Denoise pipelines
-    compTemporal = loadShaderModule(ctx, "Renderer/shaders/rt_denoise_temporal.comp");
-    pipelineTemporal =
-        ctx->createComputePipeline({.smComp = compTemporal, .debugName = "Pipeline: RT Denoise Temporal"});
-
-    compSpatial = loadShaderModule(ctx, "Renderer/shaders/rt_denoise_spatial.comp");
-    pipelineSpatialX = ctx->createComputePipeline({
-        .smComp = compSpatial,
-        .specInfo = {.entries = {{.constantId = 0, .size = sizeof(uint32_t)}},
-                     .data = &kHorizontal,
-                     .dataSize = sizeof(uint32_t)},
-        .debugName = "Pipeline: RT Denoise Spatial X",
-    });
-    pipelineSpatialY = ctx->createComputePipeline({
-        .smComp = compSpatial,
-        .specInfo = {.entries = {{.constantId = 0, .size = sizeof(uint32_t)}},
-                     .data = &kVertical,
-                     .dataSize = sizeof(uint32_t)},
-        .debugName = "Pipeline: RT Denoise Spatial Y",
-    });
-
-    compAtrous = loadShaderModule(ctx, "Renderer/shaders/rt_denoise_atrous.comp");
-    pipelineAtrousStep1 = ctx->createComputePipeline({
-        .smComp = compAtrous,
-        .specInfo = {.entries = {{.constantId = 0, .size = sizeof(uint32_t)}},
-                     .data = &kAtrousStep1,
-                     .dataSize = sizeof(uint32_t)},
-        .debugName = "Pipeline: RT Denoise A-trous Step 1",
-    });
-    pipelineAtrousStep2 = ctx->createComputePipeline({
-        .smComp = compAtrous,
-        .specInfo = {.entries = {{.constantId = 0, .size = sizeof(uint32_t)}},
-                     .data = &kAtrousStep2,
-                     .dataSize = sizeof(uint32_t)},
-        .debugName = "Pipeline: RT Denoise A-trous Step 2",
-    });
-}
-
-void RTShadowAOPass::execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
-                             const FrameTargets &targets, const ShadowPass &shadows, const RayTracingScene &rt,
-                             const mat4 &view, const mat4 &proj, lvk::SamplerHandle samplerClamp)
-{
-    if (!rt.valid())
-    {
-        return;
-    }
-
-    buf.cmdPushDebugGroupLabel("RT Shadow/AO", 0xff4040ff);
-    const lvk::Framebuffer fb = {
-        .color = {{.texture = rtResult}},
-    };
-    buf.cmdBeginRendering({.color = {{.loadOp = lvk::LoadOp_DontCare, .storeOp = lvk::StoreOp_Store}}}, fb,
-                          {.textures =
-                               {
-                                   lvk::TextureHandle(targets.gbufferRT1),
-                                   lvk::TextureHandle(targets.opaqueDepth),
-                                   lvk::TextureHandle(blueNoise),
-                               },
-                           .buffers = {lvk::BufferHandle(shadows.lightBuffer)}});
-
-    const RTShadowAOPushConstants pc = {
-        .invViewProj = glm::inverse(proj * view),
-        .gbuffer1 = targets.gbufferRT1.index(),
-        .depth = targets.opaqueDepth.index(),
-        .smpl = samplerClamp.index(),
-        .texBlueNoise = blueNoise.index(),
-        .bufferLight = ctx->gpuAddress(shadows.lightBuffer),
-    };
-    buf.cmdBindRenderPipeline(pipeline);
-    buf.cmdPushConstants(pc);
-    buf.cmdBindDepthState({});
-    buf.cmdDraw(3);
-    buf.cmdEndRendering();
-    buf.cmdPopDebugGroupLabel();
-}
-
-lvk::TextureHandle RTShadowAOPass::denoise(lvk::ICommandBuffer &buf, const FrameTargets &targets, const mat4 &view,
-                                           const mat4 &proj, lvk::SamplerHandle samplerClamp)
-{
-    buf.cmdPushDebugGroupLabel("RT Denoise", 0xff80ffff);
-
-    const uint32_t currHist = historyIndex;
-    const uint32_t prevHist = 1 - historyIndex;
-
-    // TODO(luhanyang): Reset history when denoise mode or RT quality settings change.
-    if (!historyValid)
-    {
-        buf.cmdCopyImage(rtResult, rtHistory[currHist], halfRes);
-    }
-    else
-    {
-        const struct
-        {
-            mat4 invViewProj;
-            mat4 prevViewProjMat;
-            uint32_t texCurrent;
-            uint32_t texHistory;
-            uint32_t texDepth;
-            uint32_t texPrevDepth;
-            uint32_t texOut;
-            uint32_t sampler;
-            float alpha;
-            float depthThreshold;
-        } pc = {
-            .invViewProj = glm::inverse(proj * view),
-            .prevViewProjMat = prevViewProj,
-            .texCurrent = rtResult.index(),
-            .texHistory = rtHistory[prevHist].index(),
-            .texDepth = targets.opaqueDepth.index(),
-            .texPrevDepth = prevDepth.index(),
-            .texOut = rtHistory[currHist].index(),
-            .sampler = samplerClamp.index(),
-            .alpha = 0.1f, // or 0.05 to get more stable result?
-            .depthThreshold = 0.1f,
-        };
-        buf.cmdBindComputePipeline(pipelineTemporal);
-        buf.cmdPushConstants(pc);
-        buf.cmdDispatchThreadGroups(halfRes.divide2DRoundUp(16), {.textures = {
-                                                                      lvk::TextureHandle(rtResult),
-                                                                      lvk::TextureHandle(rtHistory[prevHist]),
-                                                                      lvk::TextureHandle(targets.opaqueDepth),
-                                                                      lvk::TextureHandle(prevDepth),
-                                                                      lvk::TextureHandle(rtHistory[currHist]),
-                                                                  }});
-    }
-
-    if (gSettings.rayTracing.denoiseMode == RTDenoiseMode_Atrous)
-    {
-        struct AtrousPC
-        {
-            uint32_t texIn;
-            uint32_t texOut;
-            uint32_t texDepth;
-            uint32_t texGBuffer1;
-            uint32_t sampler;
-            float depthSigma;
-            float normalSigma;
-        };
-
-        const auto dispatchAtrous =
-            [&](lvk::ComputePipelineHandle pipeline, lvk::TextureHandle texIn, lvk::TextureHandle texOut)
-        {
-            const AtrousPC pc = {
-                .texIn = texIn.index(),
-                .texOut = texOut.index(),
-                .texDepth = targets.opaqueDepth.index(),
-                .texGBuffer1 = targets.gbufferRT1.index(),
-                .sampler = samplerClamp.index(),
-                .depthSigma = 0.0015f,
-                .normalSigma = 64.0f,
-            };
-            buf.cmdBindComputePipeline(pipeline);
-            buf.cmdPushConstants(pc);
-            buf.cmdDispatchThreadGroups(halfRes.divide2DRoundUp(16), {.textures = {
-                                                                          texIn,
-                                                                          texOut,
-                                                                          lvk::TextureHandle(targets.opaqueDepth),
-                                                                          lvk::TextureHandle(targets.gbufferRT1),
-                                                                      }});
-        };
-
-        dispatchAtrous(pipelineAtrousStep1, lvk::TextureHandle(rtHistory[currHist]), lvk::TextureHandle(rtDenoised));
-        dispatchAtrous(pipelineAtrousStep2, lvk::TextureHandle(rtDenoised), lvk::TextureHandle(rtResult));
-    }
-    else
-    {
-        // Spatial blur X: history -> rtDenoised
-        {
-            const struct
-            {
-                uint32_t texIn;
-                uint32_t texOut;
-                uint32_t texDepth;
-                uint32_t sampler;
-                float depthThreshold;
-            } pc = {
-                .texIn = rtHistory[currHist].index(),
-                .texOut = rtDenoised.index(),
-                .texDepth = targets.opaqueDepth.index(),
-                .sampler = samplerClamp.index(),
-                .depthThreshold = 50000.0f,
-            };
-            buf.cmdBindComputePipeline(pipelineSpatialX);
-            buf.cmdPushConstants(pc);
-            buf.cmdDispatchThreadGroups(halfRes.divide2DRoundUp(16), {.textures = {
-                                                                          lvk::TextureHandle(rtHistory[currHist]),
-                                                                          lvk::TextureHandle(rtDenoised),
-                                                                          lvk::TextureHandle(targets.opaqueDepth),
-                                                                      }});
-        }
-
-        // Spatial blur Y: rtDenoised -> rtResult
-        {
-            const struct
-            {
-                uint32_t texIn;
-                uint32_t texOut;
-                uint32_t texDepth;
-                uint32_t sampler;
-                float depthThreshold;
-            } pc = {
-                .texIn = rtDenoised.index(),
-                .texOut = rtResult.index(),
-                .texDepth = targets.opaqueDepth.index(),
-                .sampler = samplerClamp.index(),
-                .depthThreshold = 50000.0f,
-            };
-            buf.cmdBindComputePipeline(pipelineSpatialY);
-            buf.cmdPushConstants(pc);
-            buf.cmdDispatchThreadGroups(halfRes.divide2DRoundUp(16), {.textures = {
-                                                                          lvk::TextureHandle(rtDenoised),
-                                                                          lvk::TextureHandle(rtResult),
-                                                                          lvk::TextureHandle(targets.opaqueDepth),
-                                                                      }});
-        }
-    }
-
-    // Copy current depth to prevDepth for next frame
-    buf.cmdCopyImage(targets.opaqueDepth, prevDepth, targets.sizeFb);
-    buf.cmdPopDebugGroupLabel();
-
-    prevViewProj = proj * view;
-    historyIndex = 1 - historyIndex;
-    historyValid = true;
-
-    return lvk::TextureHandle(rtResult);
 }
 
 OITPass::OITPass(const std::unique_ptr<lvk::IContext> &ctx, const lvk::Dimensions &sizeFb)
@@ -473,8 +192,7 @@ LightingPass::LightingPass(const std::unique_ptr<lvk::IContext> &ctx, const Fram
 }
 lvk::TextureHandle LightingPass::execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                                          const FrameTargets &targets, const Skybox &skyBox, const ShadowPass &shadows,
-                                         const mat4 &view, const mat4 &proj, lvk::SamplerHandle samplerClamp,
-                                         lvk::TextureHandle rtShadowAO)
+                                         const mat4 &view, const mat4 &proj, lvk::SamplerHandle samplerClamp)
 {
     const lvk::Framebuffer framebufferMain = {
         .color = {{.texture = targets.lightingColor}},
@@ -487,7 +205,6 @@ lvk::TextureHandle LightingPass::execute(const std::unique_ptr<lvk::IContext> &c
     pc.gbuffer3 = targets.gbufferRT3.index();
     pc.depth = targets.opaqueDepth.index();
     pc.texSkyboxIrradiance = skyBox.texSkyboxIrradiance.index();
-    pc.texRTShadowAO = rtShadowAO.valid() ? rtShadowAO.index() : 0;
     pc.sampler = samplerClamp.index();
     pc.bufferLight = ctx->gpuAddress(shadows.lightBuffer);
 
@@ -504,7 +221,6 @@ lvk::TextureHandle LightingPass::execute(const std::unique_ptr<lvk::IContext> &c
                                    lvk::TextureHandle(targets.opaqueDepth),
                                    lvk::TextureHandle(skyBox.texSkyboxIrradiance),
                                    lvk::TextureHandle(shadows.map),
-                                   rtShadowAO,
                                },
                            .buffers = {lvk::BufferHandle(shadows.lightBuffer)}});
     buf.cmdBindRenderPipeline(pipeline);

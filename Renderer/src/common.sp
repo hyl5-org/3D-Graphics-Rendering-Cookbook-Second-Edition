@@ -29,13 +29,6 @@ layout(std430, buffer_reference) readonly buffer LightBuffer {
   vec4 lightDir;
   uint shadowTexture;
   uint shadowSampler;
-  uint rtShadowEnabled;
-  uint rtAOEnabled;
-  uint rtAOSamples;
-  float rtAORadius;
-  float rtAOPower;
-  float rtShadowStrength;
-  float rtShadowRadius;
   uint frameIndex;
 };
 

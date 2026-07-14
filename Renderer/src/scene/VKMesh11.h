@@ -1,6 +1,5 @@
 #pragma once
 
-#include "../RayTracing.h"
 #include "scene/MeshUtils.h"
 
 #include <cstring>
@@ -266,7 +265,6 @@ class VKMesh11
                                              .debugName = "Buffer: drawData"},
                                             nullptr);
 
-        rayTracing_ = FinalDemo::createRayTracingScene(ctx, meshData, scene, bufferPositions_, bufferIndices_);
     }
 
     void draw(lvk::ICommandBuffer &buf, const VKPipeline &pipeline, const mat4 &view, const mat4 &proj,
@@ -345,8 +343,6 @@ class VKMesh11
     lvk::Holder<lvk::BufferHandle> bufferTransforms_;
     lvk::Holder<lvk::BufferHandle> bufferDrawData_;
     lvk::Holder<lvk::BufferHandle> bufferMaterials_;
-    FinalDemo::RayTracingScene rayTracing_;
-
     std::vector<DrawData> drawData_;
 
     VKIndirectBuffer11 indirectBuffer_;

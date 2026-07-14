@@ -104,36 +104,6 @@ void drawControls(uint32_t width, uint32_t height, float aspectRatio, SceneCulli
     }
 
 
-    if (ImGui::CollapsingHeader("Ray Tracing"))
-    {
-        // TODO(luhanyang): Re-enable after the OMM runtime backend can build and attach micromaps.
-        // static const OmmSdkStatus ommStatus = probeOmmSdk();
-        ImGui::Indent(indentSize);
-        ImGui::Checkbox("RT shadows", &gSettings.rayTracing.shadows);
-        ImGui::SliderFloat("RT shadow strength", &gSettings.rayTracing.shadowStrength, 0.0f, 1.0f);
-        ImGui::SliderFloat("RT shadow radius", &gSettings.rayTracing.shadowRadius, 0.0f, 0.1f);
-        ImGui::RadioButton("Gaussian denoise", &gSettings.rayTracing.denoiseMode, RTDenoiseMode_Gaussian);
-        ImGui::RadioButton("A-trous denoise", &gSettings.rayTracing.denoiseMode, RTDenoiseMode_Atrous);
-        ImGui::Checkbox("RTAO", &gSettings.rayTracing.ao);
-        ImGui::SliderInt("RTAO samples", &gSettings.rayTracing.aoSamples, 1, 16);
-        ImGui::SliderFloat("RTAO radius", &gSettings.rayTracing.aoRadius, 0.01f, 10.0f);
-        ImGui::SliderFloat("RTAO power", &gSettings.rayTracing.aoPower, 0.1f, 4.0f);
-        // ImGui::Separator();
-        // ImGui::Text("RTX OMM SDK: %s", ommSdkStatusText(ommStatus));
-        // if (ommStatus.compiled)
-        // {
-        //     ImGui::Text("OMM version: %u.%u.%u", ommStatus.versionMajor, ommStatus.versionMinor,
-        //                 ommStatus.versionBuild);
-        // }
-        // ImGui::BeginDisabled(!ommStatus.runtimeBackendReady);
-        // ImGui::Checkbox("RTX OMM alpha masks", &gSettings.rayTracing.omm.enabled);
-        // ImGui::SliderInt("OMM max subdivision", &gSettings.rayTracing.omm.maxSubdivisionLevel, 0, 12);
-        // ImGui::SliderFloat("OMM dynamic scale", &gSettings.rayTracing.omm.dynamicSubdivisionScale, 0.0f, 16.0f);
-        // ImGui::EndDisabled();
-        ImGui::Unindent(indentSize);
-        ImGui::Separator();
-    }
-
     if (ImGui::CollapsingHeader("Tone Mapping and HDR"))
     {
         ImGui::Indent(indentSize);

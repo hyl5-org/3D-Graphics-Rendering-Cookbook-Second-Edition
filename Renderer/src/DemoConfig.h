@@ -1,7 +1,5 @@
 #pragma once
 
-// TODO(luhanyang): Enable OMM settings when VK_EXT_opacity_micromap is wired through LVK.
-// #include "OmmSdk.h"
 #include "shared/Tonemap.h"
 #include "shared/VulkanApp.h"
 
@@ -53,20 +51,11 @@ constexpr lvk::Format kHDRBloomFormat = lvk::Format_RGBA_F16;
 constexpr lvk::Dimensions kBloomSize = {512, 512};
 constexpr uint32_t kHorizontal = 1;
 constexpr uint32_t kVertical = 0;
-constexpr uint32_t kAtrousStep1 = 1;
-constexpr uint32_t kAtrousStep2 = 2;
-
 enum CullingMode
 {
     CullingMode_None = 0,
     CullingMode_CPU = 1,
     CullingMode_GPU = 2,
-};
-
-enum RTDenoiseMode
-{
-    RTDenoiseMode_Gaussian = 0,
-    RTDenoiseMode_Atrous = 1,
 };
 
 struct DrawSettings
@@ -75,19 +64,6 @@ struct DrawSettings
     bool meshesTransparent = false;
     bool boxes = false;
     bool lightFrustum = false;
-};
-
-struct RayTracingSettings
-{
-    bool shadows = true;
-    bool ao = true;
-    // OmmBakeSettings omm;
-    int denoiseMode = RTDenoiseMode_Atrous;
-    int aoSamples = 1;
-    float aoRadius = 2.0f;
-    float aoPower = 1.0f;
-    float shadowStrength = 0.5f;
-    float shadowRadius = 0.02f;
 };
 
 struct OITSettings
@@ -125,7 +101,6 @@ struct LightParams
 struct DemoSettings
 {
     DrawSettings draw;
-    RayTracingSettings rayTracing;
     OITSettings oit;
     HDRSettings hdr;
     CullingSettings culling;

@@ -40,7 +40,6 @@ VULKAN_APP_MAIN
     // Geometry
     RenderPipelines pipelines(ctx, loadedScene.meshData, app.getDepthFormat(), ctx->getFormat(shadows.map));
 
-    RTShadowAOPass rtShadowAO(ctx, targets, ctx->getSwapchainFormat());
     LightingPass lighting(ctx, targets, samplerClamp, ctx->getSwapchainFormat());
 
     OITPass oit(ctx, targets.sizeFb);
@@ -97,19 +96,9 @@ VULKAN_APP_MAIN
                 renderGbufferPass(ctx, app, buf, targets, loadedScene, skyBox, mesh, pipelines, drawLists, oit, shadows,
                                   canvas3d, view, proj, lightFrame);
                 LVK_PROFILER_ZONE_END();
-                lvk::TextureHandle rtTex;
-                LVK_PROFILER_ZONE("RT Shadow/AO", LVK_PROFILER_COLOR_CMD_DRAW);
-
-                if (mesh.rayTracing_.valid() && (gSettings.rayTracing.shadows || gSettings.rayTracing.ao))
-                {
-                    rtShadowAO.execute(ctx, buf, targets, shadows, mesh.rayTracing_, view, proj, samplerClamp);
-                    rtTex = rtShadowAO.denoise(buf, targets, view, proj, samplerClamp);
-                }
-                LVK_PROFILER_ZONE_END();
-
                 lvk::TextureHandle currentColor;
                 LVK_PROFILER_ZONE("Lighting pass", LVK_PROFILER_COLOR_CMD_DRAW);
-                currentColor = lighting.execute(ctx, buf, targets, skyBox, shadows, view, proj, samplerClamp, rtTex);
+                currentColor = lighting.execute(ctx, buf, targets, skyBox, shadows, view, proj, samplerClamp);
                 LVK_PROFILER_ZONE_END();
 
                 LVK_PROFILER_ZONE("Skybox pass", LVK_PROFILER_COLOR_CMD_DRAW);

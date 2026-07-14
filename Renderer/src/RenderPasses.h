@@ -1,6 +1,5 @@
 #pragma once
 
-#include "RayTracing.h"
 #include "SceneResources.h"
 
 #include "scene/Skybox.h"
@@ -16,13 +15,6 @@ struct LightData
     vec4 lightDir;
     uint32_t shadowTexture;
     uint32_t shadowSampler;
-    uint32_t rtShadowEnabled;
-    uint32_t rtAOEnabled;
-    uint32_t rtAOSamples;
-    float rtAORadius;
-    float rtAOPower;
-    float rtShadowStrength;
-    float rtShadowRadius;
     uint32_t frameIndex;
 };
 
@@ -49,7 +41,6 @@ struct LightingPassPushConstants
     uint32_t gbuffer3;
     uint32_t depth;
     uint32_t texSkyboxIrradiance;
-    uint32_t texRTShadowAO;
     uint32_t sampler;
     uint64_t bufferLight;
 };
@@ -109,59 +100,13 @@ struct ShadowPass
                         const LightFrame &lightFrame);
 };
 
-struct RTShadowAOPushConstants
-{
-    mat4 invViewProj;
-    uint32_t gbuffer1;
-    uint32_t depth;
-    uint32_t smpl;
-    uint32_t texBlueNoise;
-    uint64_t bufferLight;
-};
-
-struct RTShadowAOPass
-{
-    RTShadowAOPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets, lvk::Format swapchainFormat);
-    void execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf, const FrameTargets &targets,
-                 const ShadowPass &shadows, const RayTracingScene &rt, const mat4 &view, const mat4 &proj,
-                 lvk::SamplerHandle samplerClamp);
-    lvk::TextureHandle denoise(lvk::ICommandBuffer &buf, const FrameTargets &targets, const mat4 &view,
-                               const mat4 &proj, lvk::SamplerHandle samplerClamp);
-
-    lvk::Holder<lvk::ShaderModuleHandle> vert;
-    lvk::Holder<lvk::ShaderModuleHandle> frag;
-    lvk::Holder<lvk::RenderPipelineHandle> pipeline;
-    lvk::Holder<lvk::TextureHandle> rtResult;
-    lvk::Holder<lvk::TextureHandle> blueNoise;
-
-    // Denoise
-    std::array<lvk::Holder<lvk::TextureHandle>, 2> rtHistory;
-    lvk::Holder<lvk::TextureHandle> rtDenoised;
-    lvk::Holder<lvk::TextureHandle> prevDepth;
-
-    lvk::Holder<lvk::ShaderModuleHandle> compTemporal;
-    lvk::Holder<lvk::ComputePipelineHandle> pipelineTemporal;
-
-    lvk::Holder<lvk::ShaderModuleHandle> compSpatial;
-    lvk::Holder<lvk::ComputePipelineHandle> pipelineSpatialX;
-    lvk::Holder<lvk::ComputePipelineHandle> pipelineSpatialY;
-    lvk::Holder<lvk::ShaderModuleHandle> compAtrous;
-    lvk::Holder<lvk::ComputePipelineHandle> pipelineAtrousStep1;
-    lvk::Holder<lvk::ComputePipelineHandle> pipelineAtrousStep2;
-    mat4 prevViewProj = mat4(1.0f);
-    uint32_t historyIndex = 0;
-    bool historyValid = false;
-    lvk::Dimensions halfRes = {};
-};
-
 struct LightingPass
 {
     LightingPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets,
                  lvk::SamplerHandle samplerClamp, lvk::Format swapchainFormat);
     lvk::TextureHandle execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                                const FrameTargets &targets, const Skybox &skyBox, const ShadowPass &shadows,
-                               const mat4 &view, const mat4 &proj, lvk::SamplerHandle samplerClamp,
-                               lvk::TextureHandle rtShadowAO);
+                               const mat4 &view, const mat4 &proj, lvk::SamplerHandle samplerClamp);
 
     lvk::Holder<lvk::ShaderModuleHandle> vert;
     lvk::Holder<lvk::ShaderModuleHandle> frag;
