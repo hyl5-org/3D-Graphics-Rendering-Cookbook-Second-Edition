@@ -58,7 +58,7 @@ struct HDRPushConstants
     uint32_t texLuminance;
     uint32_t texBloom;
     uint32_t sampler;
-    int drawMode = ToneMapping_None;
+    int drawMode = ToneMapping_Uchimura;
 
     float exposure = 0.95f;
     float bloomStrength = 0.0f;

@@ -4,6 +4,7 @@
 #include <lvk/vulkan/VulkanUtils.h>
 #include <algorithm>
 #include <chrono>
+#include <cfloat>
 #include <cstdlib>
 #include <cmath>
 #include <string>
@@ -773,27 +774,71 @@ void VulkanApp::initXrActions()
     };
     XR_ASSERT(xrCreateAction(xrActionSet_, &turnActionCI, &xrTurnAction_));
 
-    const auto suggestThumbstickBindings = [&](const char *profilePath, const char *leftPath, const char *rightPath)
+    const XrActionCreateInfo uiAimActionCI = {
+        .type = XR_TYPE_ACTION_CREATE_INFO,
+        .actionName = "ui_aim",
+        .actionType = XR_ACTION_TYPE_POSE_INPUT,
+        .countSubactionPaths = 1,
+        .subactionPaths = rightHandPaths,
+        .localizedActionName = "UI Aim",
+    };
+    XR_ASSERT(xrCreateAction(xrActionSet_, &uiAimActionCI, &xrUiAimAction_));
+
+    const XrActionCreateInfo uiClickActionCI = {
+        .type = XR_TYPE_ACTION_CREATE_INFO,
+        .actionName = "ui_click",
+        .actionType = XR_ACTION_TYPE_FLOAT_INPUT,
+        .countSubactionPaths = 1,
+        .subactionPaths = rightHandPaths,
+        .localizedActionName = "UI Click",
+    };
+    XR_ASSERT(xrCreateAction(xrActionSet_, &uiClickActionCI, &xrUiClickAction_));
+
+    const XrActionSpaceCreateInfo uiAimSpaceCI = {
+        .type = XR_TYPE_ACTION_SPACE_CREATE_INFO,
+        .action = xrUiAimAction_,
+        .subactionPath = xrRightHandPath_,
+        .poseInActionSpace =
+            {
+                .orientation = {.x = 0, .y = 0, .z = 0, .w = 1},
+                .position = {.x = 0, .y = 0, .z = 0},
+            },
+    };
+    XR_ASSERT(xrCreateActionSpace(xrSession_, &uiAimSpaceCI, &xrUiAimSpace_));
+
+    const auto suggestControllerBindings = [&](const char *profilePath, const char *leftStickPath,
+                                                const char *rightStickPath, const char *rightAimPath,
+                                                const char *rightClickPath)
     {
         XrPath profile = XR_NULL_PATH;
-        XrPath left = XR_NULL_PATH;
-        XrPath right = XR_NULL_PATH;
-        if (!xrStringToPathChecked(xrInstance_, profilePath, &profile) ||
-            !xrStringToPathChecked(xrInstance_, leftPath, &left) ||
-            !xrStringToPathChecked(xrInstance_, rightPath, &right))
+        if (!xrStringToPathChecked(xrInstance_, profilePath, &profile))
         {
             return;
         }
 
-        const XrActionSuggestedBinding bindings[] = {
-            {.action = xrMoveAction_, .binding = left},
-            {.action = xrTurnAction_, .binding = right},
+        std::vector<XrActionSuggestedBinding> bindings;
+        const auto addBinding = [&](XrAction action, const char *pathText)
+        {
+            if (!pathText)
+            {
+                return;
+            }
+            XrPath path = XR_NULL_PATH;
+            if (xrStringToPathChecked(xrInstance_, pathText, &path))
+            {
+                bindings.push_back({.action = action, .binding = path});
+            }
         };
+        addBinding(xrMoveAction_, leftStickPath);
+        addBinding(xrTurnAction_, rightStickPath);
+        addBinding(xrUiAimAction_, rightAimPath);
+        addBinding(xrUiClickAction_, rightClickPath);
+
         const XrInteractionProfileSuggestedBinding suggestedBindings = {
             .type = XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING,
             .interactionProfile = profile,
-            .countSuggestedBindings = 2,
-            .suggestedBindings = bindings,
+            .countSuggestedBindings = static_cast<uint32_t>(bindings.size()),
+            .suggestedBindings = bindings.data(),
         };
         const XrResult result = xrSuggestInteractionProfileBindings(xrInstance_, &suggestedBindings);
         if (XR_FAILED(result))
@@ -802,15 +847,21 @@ void VulkanApp::initXrActions()
         }
     };
 
-    suggestThumbstickBindings("/interaction_profiles/oculus/touch_controller",
-                              "/user/hand/left/input/thumbstick", "/user/hand/right/input/thumbstick");
-    suggestThumbstickBindings("/interaction_profiles/valve/index_controller",
-                              "/user/hand/left/input/thumbstick", "/user/hand/right/input/thumbstick");
-    suggestThumbstickBindings("/interaction_profiles/microsoft/motion_controller",
-                              "/user/hand/left/input/thumbstick", "/user/hand/right/input/thumbstick");
-    suggestThumbstickBindings("/interaction_profiles/htc/vive_cosmos_controller",
-                              "/user/hand/left/input/thumbstick", "/user/hand/right/input/thumbstick");
-
+    suggestControllerBindings("/interaction_profiles/oculus/touch_controller",
+                              "/user/hand/left/input/thumbstick", "/user/hand/right/input/thumbstick",
+                              "/user/hand/right/input/aim/pose", "/user/hand/right/input/trigger/value");
+    suggestControllerBindings("/interaction_profiles/valve/index_controller",
+                              "/user/hand/left/input/thumbstick", "/user/hand/right/input/thumbstick",
+                              "/user/hand/right/input/aim/pose", "/user/hand/right/input/trigger/value");
+    suggestControllerBindings("/interaction_profiles/microsoft/motion_controller",
+                              "/user/hand/left/input/thumbstick", "/user/hand/right/input/thumbstick",
+                              "/user/hand/right/input/aim/pose", "/user/hand/right/input/trigger/value");
+    suggestControllerBindings("/interaction_profiles/htc/vive_cosmos_controller",
+                              "/user/hand/left/input/thumbstick", "/user/hand/right/input/thumbstick",
+                              "/user/hand/right/input/aim/pose", "/user/hand/right/input/trigger/value");
+    suggestControllerBindings("/interaction_profiles/htc/vive_controller",
+                              "/user/hand/left/input/trackpad", "/user/hand/right/input/trackpad",
+                              "/user/hand/right/input/aim/pose", "/user/hand/right/input/trigger/value");
     const XrActionSet actionSets[] = {xrActionSet_};
     const XrSessionActionSetsAttachInfo attachInfo = {
         .type = XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO,
@@ -845,6 +896,11 @@ void VulkanApp::destroyOpenXR()
         ctx_->wait({});
         xrColorSwapchain_.destroy(ctx_.get());
     }
+    if (xrUiAimSpace_)
+    {
+        xrDestroySpace(xrUiAimSpace_);
+        xrUiAimSpace_ = XR_NULL_HANDLE;
+    }
     if (xrAppSpace_)
     {
         xrDestroySpace(xrAppSpace_);
@@ -859,6 +915,16 @@ void VulkanApp::destroyOpenXR()
     {
         xrDestroyAction(xrTurnAction_);
         xrTurnAction_ = XR_NULL_HANDLE;
+    }
+    if (xrUiAimAction_)
+    {
+        xrDestroyAction(xrUiAimAction_);
+        xrUiAimAction_ = XR_NULL_HANDLE;
+    }
+    if (xrUiClickAction_)
+    {
+        xrDestroyAction(xrUiClickAction_);
+        xrUiClickAction_ = XR_NULL_HANDLE;
     }
     if (xrActionSet_)
     {
@@ -939,6 +1005,7 @@ void VulkanApp::syncXrActions()
 {
     xrMoveInput_ = vec2(0.0f);
     xrTurnInput_ = vec2(0.0f);
+    xrUiClickInput_ = false;
 
     if (!xrActionSet_)
     {
@@ -970,6 +1037,73 @@ void VulkanApp::syncXrActions()
 
     xrMoveInput_ = getVector2(xrMoveAction_, xrLeftHandPath_);
     xrTurnInput_ = getVector2(xrTurnAction_, xrRightHandPath_);
+
+    XrActionStateFloat clickState = {.type = XR_TYPE_ACTION_STATE_FLOAT};
+    const XrActionStateGetInfo clickInfo = {
+        .type = XR_TYPE_ACTION_STATE_GET_INFO,
+        .action = xrUiClickAction_,
+        .subactionPath = xrRightHandPath_,
+    };
+    XR_ASSERT(xrGetActionStateFloat(xrSession_, &clickInfo, &clickState));
+    xrUiClickInput_ = clickState.isActive && clickState.currentState >= 0.5f;
+}
+
+void VulkanApp::updateXrUiInput(XrTime displayTime, float deltaSeconds)
+{
+    if (!ImGui::GetCurrentContext())
+    {
+        return;
+    }
+
+    ImGuiIO &io = ImGui::GetIO();
+    io.MouseDrawCursor = true;
+    xrUiPointerValid_ = false;
+
+    XrSpaceLocation location = {.type = XR_TYPE_SPACE_LOCATION};
+    if (xrUiAimSpace_ && XR_SUCCEEDED(xrLocateSpace(xrUiAimSpace_, xrAppSpace_, displayTime, &location)) &&
+        (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0 &&
+        (location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) != 0)
+    {
+        const mat4 eyeFromLocal = glm::inverse(getXrLocalFromViewMatrix(0));
+        const vec3 originEye = vec3(eyeFromLocal * vec4(xrVecToGlm(location.pose.position), 1.0f));
+        const vec3 directionLocal = xrQuatToGlm(location.pose.orientation) * vec3(0.0f, 0.0f, -1.0f);
+        const vec3 directionEye = glm::normalize(mat3(eyeFromLocal) * directionLocal);
+
+        constexpr float kUiPlaneZ = -2.0f;
+        if (directionEye.z < -0.001f)
+        {
+            const float distance = (kUiPlaneZ - originEye.z) / directionEye.z;
+            if (distance > 0.0f)
+            {
+                const vec3 hitEye = originEye + directionEye * distance;
+                const vec4 clip = getXrProjectionMatrix(0, 0.01f, 100.0f) * vec4(hitEye, 1.0f);
+                if (clip.w > 0.0f)
+                {
+                    const vec2 ndc = vec2(clip) / clip.w;
+                    if (ndc.x >= -1.0f && ndc.x <= 1.0f && ndc.y >= -1.0f && ndc.y <= 1.0f)
+                    {
+                        const float mouseX = (ndc.x * 0.5f + 0.5f) * static_cast<float>(width_);
+                        const float mouseY = (0.5f - ndc.y * 0.5f) * static_cast<float>(height_);
+                        io.AddMousePosEvent(mouseX, mouseY);
+                        xrUiPointerValid_ = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if (!xrUiPointerValid_)
+    {
+        io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+    }
+    io.AddMouseButtonEvent(0, xrUiPointerValid_ && xrUiClickInput_);
+
+    constexpr float kScrollDeadZone = 0.25f;
+    if (xrUiPointerValid_ && std::abs(xrTurnInput_.y) > kScrollDeadZone)
+    {
+        const float frameTime = std::min(deltaSeconds, 0.1f);
+        io.AddMouseWheelEvent(0.0f, xrTurnInput_.y * 6.0f * frameTime);
+    }
 }
 
 void VulkanApp::updateXrLocomotion(float deltaSeconds)
@@ -999,7 +1133,9 @@ void VulkanApp::updateXrLocomotion(float deltaSeconds)
     }
     xrPlayerPosition_ += (right * move.x + forward * move.y) * kMoveSpeed * deltaSeconds;
 
-    const float turn = xrTurnInput_.x;
+    const bool uiCapturesPointer =
+        xrUiPointerValid_ && ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureMouse;
+    const float turn = uiCapturesPointer ? 0.0f : xrTurnInput_.x;
     if (std::abs(turn) < kTurnRelease)
     {
         xrSnapTurnReady_ = true;
@@ -1104,6 +1240,7 @@ bool VulkanApp::renderXrFrame(DrawFrameFunc &drawFrame)
     LVK_ASSERT(numViews == 2);
     xrViewsValid_ = true;
     syncXrActions();
+    updateXrUiInput(frameState.predictedDisplayTime, deltaSeconds);
     updateXrLocomotion(deltaSeconds);
 
     if (!xrColorSwapchain_.acquire())

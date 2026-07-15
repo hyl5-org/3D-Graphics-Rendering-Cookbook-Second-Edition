@@ -97,7 +97,11 @@ vec3 PBRNeutralToneMapping(vec3 color, float startCompression, float desaturatio
     float g = 1. - 1. / (desaturation * (peak - newPeak) + 1.);
     return mix(color, newPeak * vec3(1, 1, 1), g);
 }
+vec4 SRGBtoLINEAR(vec4 srgbIn) {
+  vec3 linOut = pow(srgbIn.xyz,vec3(2.2));
 
+  return vec4(linOut, srgbIn.a);
+}
 void main()
 {
     vec3 color = textureBindless2DArray(pc.texColor, pc.smpl, uv, gl_ViewIndex).rgb;
@@ -124,4 +128,5 @@ void main()
     }
 
     out_FragColor = vec4(color + pc.bloomStrength * bloom, 1.0);
+    out_FragColor = SRGBtoLINEAR(out_FragColor); // FIXME: why SRGB swapchain need that
 }

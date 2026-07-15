@@ -64,7 +64,7 @@ enum CullingMode
 struct DrawSettings
 {
     bool meshesOpaque = true;
-    bool meshesTransparent = false;
+    bool meshesTransparent = true;
     bool boxes = false;
     bool lightFrustum = false;
 };

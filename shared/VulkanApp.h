@@ -185,6 +185,7 @@ class VulkanApp
     void pollXrEvents();
     bool renderXrFrame(DrawFrameFunc &drawFrame);
     void syncXrActions();
+    void updateXrUiInput(XrTime displayTime, float deltaSeconds);
     void updateXrLocomotion(float deltaSeconds);
     mat4 getXrWorldFromLocalMatrix() const;
     mat4 getXrLocalFromViewMatrix(uint32_t eye) const;
@@ -207,10 +208,15 @@ class VulkanApp
     XrActionSet xrActionSet_ = XR_NULL_HANDLE;
     XrAction xrMoveAction_ = XR_NULL_HANDLE;
     XrAction xrTurnAction_ = XR_NULL_HANDLE;
+    XrAction xrUiAimAction_ = XR_NULL_HANDLE;
+    XrAction xrUiClickAction_ = XR_NULL_HANDLE;
+    XrSpace xrUiAimSpace_ = XR_NULL_HANDLE;
     XrPath xrLeftHandPath_ = XR_NULL_PATH;
     XrPath xrRightHandPath_ = XR_NULL_PATH;
     vec2 xrMoveInput_ = vec2(0.0f);
     vec2 xrTurnInput_ = vec2(0.0f);
+    bool xrUiClickInput_ = false;
+    bool xrUiPointerValid_ = false;
     vec3 xrPlayerPosition_ = vec3(0.0f);
     float xrPlayerYaw_ = 0.0f;
     bool xrSnapTurnReady_ = true;

@@ -153,66 +153,22 @@ VULKAN_APP_MAIN
                 }
                 LVK_PROFILER_ZONE_END();
 
-//                if (!app.isOpenXR())
-//                {
-//                    LVK_PROFILER_ZONE("ImGui", 0xff40ff40);
-//                    buf.cmdPushDebugGroupLabel("ImGui", 0xff40ff40);
-//                    app.imgui_->beginFrame(framebufferMain);
-//                    app.drawFPS();
-//                    app.drawMemo();
-//                    drawControls(width, height, aspectRatio, culling, shadows, hdr, app);
-//#if defined(ANDROID)
-//                    const float screenWidth = ImGui::GetIO().DisplaySize.x;
-//                    const float screenHeight = ImGui::GetIO().DisplaySize.y;
-//                    const float buttonSize = std::clamp(screenWidth * 0.11f, 88.0f, 150.0f);
-//                    const float gapX = ImGui::GetStyle().ItemSpacing.x;
-//                    const float gapY = ImGui::GetStyle().ItemSpacing.y;
-//                    const ImVec2 moveButtonSize(buttonSize, buttonSize);
-//                    auto movementButton = [](const char *label, const ImVec2 &size)
-//                    {
-//                        ImGui::Button(label, size);
-//                        return ImGui::IsItemActive();
-//                    };
-//
-//                    ImGui::SetNextWindowPos(ImVec2(18.0f, screenHeight - (2.0f * buttonSize + gapY) - 28.0f),
-//                                            ImGuiCond_Always);
-//                    ImGui::Begin("##movement", nullptr,
-//                                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground |
-//                                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNavInputs |
-//                                     ImGuiWindowFlags_NoSavedSettings);
-//                    ImGui::Dummy(moveButtonSize);
-//                    ImGui::SameLine(0.0f, gapX);
-//                    app.positioner_.movement_.forward_ = movementButton("W", moveButtonSize);
-//                    ImGui::SameLine(0.0f, gapX);
-//                    ImGui::Dummy(moveButtonSize);
-//                    app.positioner_.movement_.left_ = movementButton("A", moveButtonSize);
-//                    ImGui::SameLine(0.0f, gapX);
-//                    app.positioner_.movement_.backward_ = movementButton("S", moveButtonSize);
-//                    ImGui::SameLine(0.0f, gapX);
-//                    app.positioner_.movement_.right_ = movementButton("D", moveButtonSize);
-//                    ImGui::End();
-//
-//                    const ImVec2 verticalButtonSize(buttonSize * 1.25f, buttonSize);
-//                    ImGui::SetNextWindowPos(ImVec2(screenWidth - verticalButtonSize.x - 18.0f,
-//                                                   screenHeight - (2.0f * buttonSize + gapY) - 28.0f),
-//                                            ImGuiCond_Always);
-//                    ImGui::Begin("##vertical-movement", nullptr,
-//                                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground |
-//                                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNavInputs |
-//                                     ImGuiWindowFlags_NoSavedSettings);
-//                    app.positioner_.movement_.up_ = movementButton("Up", verticalButtonSize);
-//                    app.positioner_.movement_.down_ = movementButton("Down", verticalButtonSize);
-//                    ImGui::End();
-//#endif
-//                    app.imgui_->endFrame(buf);
-//                    buf.cmdEndRendering();
-//                    buf.cmdPopDebugGroupLabel();
-//                    LVK_PROFILER_ZONE_END();
-//                }
-//                else
-//                {
-//                    buf.cmdEndRendering();
-//                }
+                LVK_PROFILER_ZONE("ImGui", 0xff40ff40);
+                buf.cmdPushDebugGroupLabel("ImGui", 0xff40ff40);
+                app.imgui_->beginFrame(framebufferMain);
+                app.drawFPS();
+                app.drawMemo();
+                drawControls(width, height, aspectRatio, culling, shadows, hdr, app);
+
+                // OpenXR uses a two-layer array swapchain. A non-multiview pass selecting
+                // layer 0 overlays ImGui on the left eye without touching the right eye.
+                buf.cmdBeginRendering(
+                    {.color = {{.loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store, .layer = 0}}},
+                    framebufferMain);
+                app.imgui_->endFrame(buf);
+                buf.cmdEndRendering();
+                buf.cmdPopDebugGroupLabel();
+                LVK_PROFILER_ZONE_END();
             }
             buf.cmdPopDebugGroupLabel();
 

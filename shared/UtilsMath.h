@@ -120,13 +120,15 @@ inline void getFrustumPlanes(mat4 viewProj, vec4 *planes)
     planes[1] = vec4(viewProj[3] - viewProj[0]); // right
     planes[2] = vec4(viewProj[3] + viewProj[1]); // bottom
     planes[3] = vec4(viewProj[3] - viewProj[1]); // top
-    planes[4] = vec4(viewProj[3] + viewProj[2]); // near
+    // Vulkan clip space uses z in [0, 1], so the near plane is z >= 0.
+    planes[4] = vec4(viewProj[2]);               // near
     planes[5] = vec4(viewProj[3] - viewProj[2]); // far
 }
 
 inline void getFrustumCorners(mat4 viewProj, vec4 *points)
 {
-    const vec4 corners[] = {vec4(-1, -1, -1, 1), vec4(1, -1, -1, 1), vec4(1, 1, -1, 1), vec4(-1, 1, -1, 1),
+    // Vulkan clip space uses z in [0, 1].
+    const vec4 corners[] = {vec4(-1, -1, 0, 1), vec4(1, -1, 0, 1), vec4(1, 1, 0, 1), vec4(-1, 1, 0, 1),
                             vec4(-1, -1, 1, 1),  vec4(1, -1, 1, 1),  vec4(1, 1, 1, 1),  vec4(-1, 1, 1, 1)};
 
     const glm::mat4 invViewProj = glm::inverse(viewProj);

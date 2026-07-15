@@ -159,18 +159,21 @@ void drawControls(uint32_t width, uint32_t height, float aspectRatio, SceneCulli
         }
         ImGui::Separator();
 
-        ImGui::Text("Average luminance 1x1:");
-        ImGui::Image(hdr.pc.texLuminance, ImVec2(128, 128));
-        ImGui::Separator();
-        ImGui::Text("Bright pass:");
-        ImGui::Image(hdr.brightPass.index(), ImVec2(windowWidth, windowWidth / aspectRatio));
-        ImGui::Text("Bloom pass:");
-        ImGui::Image(hdr.bloomPass.index(), ImVec2(windowWidth, windowWidth / aspectRatio));
-        ImGui::Separator();
-        ImGui::Text("Luminance pyramid 512x512");
-        for (uint32_t l = 0; l != hdr.luminanceViews.size(); l++)
+        if (!app.isOpenXR())
         {
-            ImGui::Image(hdr.luminanceViews[l].index(), ImVec2((int)windowWidth >> l, ((int)windowWidth >> l)));
+            ImGui::Text("Average luminance 1x1:");
+            ImGui::Image(hdr.pc.texLuminance, ImVec2(128, 128));
+            ImGui::Separator();
+            ImGui::Text("Bright pass:");
+            ImGui::Image(hdr.brightPass.index(), ImVec2(windowWidth, windowWidth / aspectRatio));
+            ImGui::Text("Bloom pass:");
+            ImGui::Image(hdr.bloomPass.index(), ImVec2(windowWidth, windowWidth / aspectRatio));
+            ImGui::Separator();
+            ImGui::Text("Luminance pyramid 512x512");
+            for (uint32_t l = 0; l != hdr.luminanceViews.size(); l++)
+            {
+                ImGui::Image(hdr.luminanceViews[l].index(), ImVec2((int)windowWidth >> l, ((int)windowWidth >> l)));
+            }
         }
         ImGui::Unindent(indentSize);
         ImGui::Separator();
