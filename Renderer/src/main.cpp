@@ -15,7 +15,11 @@ VULKAN_APP_MAIN
         .initialCameraTarget = vec3(0, +5.0f, 0),
 #if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
         .showGLTFInspector = false,
-        .contextConfig = {.enableValidation = true, .enableValidationBestPractices = false},
+        .contextConfig = {
+            .enableValidation = true,
+            .enableValidationBestPractices = false,
+            .enableFragmentShadingRate = true,
+        },
         .enableOpenXR = true,
 #endif
     };
@@ -33,6 +37,7 @@ VULKAN_APP_MAIN
     const lvk::Dimensions renderSize = app.getOutputDimensions();
     LVK_ASSERT(renderSize.width > 0 && renderSize.height > 0);
     FrameTargets targets = createGBufferTargets(ctx, app.getDepthFormat(), renderSize);
+    FixedFoveatedRendering foveation(ctx, renderSize, app.isOpenXR());
     lvk::Holder<lvk::SamplerHandle> samplerClamp = ctx->createSampler({
         .wrapU = lvk::SamplerWrap_Clamp,
         .wrapV = lvk::SamplerWrap_Clamp,
@@ -49,16 +54,17 @@ VULKAN_APP_MAIN
 
     // Geometry
     RenderPipelines pipelines(ctx, loadedScene.meshData, app.getDepthFormat(), ctx->getFormat(shadows.map),
-                              visibilityMask.enabled);
+                              visibilityMask.enabled, foveation.enabled);
 
-    LightingPass lighting(ctx, targets, samplerClamp, app.getColorFormat());
+    LightingPass lighting(ctx, targets, samplerClamp, app.getColorFormat(), foveation);
 
     OITPass oit(ctx, targets.sizeFb, app.getDepthFormat(), visibilityMask.enabled);
 
     HDRPass hdr(ctx, targets, samplerClamp, app.getColorFormat(), app.getDepthFormat(),
-                visibilityMask.enabled);
+                visibilityMask.enabled, foveation);
     const Skybox skyBox(ctx, "data/immenstadter_horn_2k_prefilter.ktx", "data/immenstadter_horn_2k_irradiance.ktx",
-                        kOffscreenFormat, app.getDepthFormat(), kNumSamples, visibilityMask.enabled);
+                        kOffscreenFormat, app.getDepthFormat(), kNumSamples, visibilityMask.enabled,
+                        foveation.enabled);
     VKMesh11Lazy mesh(ctx, loadedScene.meshData, loadedScene.scene);
     SceneDrawLists drawLists(ctx, loadedScene.meshData, mesh);
     SceneCulling culling(ctx, loadedScene, mesh);
@@ -109,7 +115,7 @@ VULKAN_APP_MAIN
 
                 LVK_PROFILER_ZONE("Geometry pass", LVK_PROFILER_COLOR_CMD_DRAW);
                 renderGbufferPass(ctx, buf, targets, loadedScene, skyBox, mesh, pipelines, drawLists, shadows,
-                                  canvas3d, lightFrame, visibilityMaskEnabled);
+                                  canvas3d, lightFrame, visibilityMaskEnabled, foveation);
                 LVK_PROFILER_ZONE_END();
 
                 lvk::TextureHandle currentColor;
@@ -118,7 +124,7 @@ VULKAN_APP_MAIN
                 LVK_PROFILER_ZONE_END();
 
                 LVK_PROFILER_ZONE("Skybox pass", LVK_PROFILER_COLOR_CMD_DRAW);
-                renderSkyboxPass(buf, targets, skyBox, visibilityMaskEnabled);
+                renderSkyboxPass(buf, targets, skyBox, visibilityMaskEnabled, foveation);
                 LVK_PROFILER_ZONE_END();
 
                 if (useOIT)

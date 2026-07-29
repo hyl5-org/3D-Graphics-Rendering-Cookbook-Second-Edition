@@ -9,15 +9,91 @@
 namespace FinalDemo
 {
 
+FixedFoveatedRendering::FixedFoveatedRendering(
+    const std::unique_ptr<lvk::IContext> &ctx, lvk::Dimensions renderSize, bool requested)
+{
+    if (!requested)
+    {
+        return;
+    }
+
+    const lvk::IContext::FragmentShadingRateCapabilities caps =
+        ctx->getFragmentShadingRateCapabilities();
+    if (!caps.attachmentSupported || !caps.supportsFragmentSize(1, 1))
+    {
+        LLOGW("Vulkan fragment shading rate attachment is unavailable; fixed foveated rendering is disabled.\n");
+        return;
+    }
+
+    const uint32_t texelWidth = caps.minAttachmentTexelSize.width;
+    const uint32_t texelHeight = caps.minAttachmentTexelSize.height;
+    LVK_ASSERT(texelWidth && texelHeight);
+
+    const uint32_t rateWidth = (renderSize.width + texelWidth - 1) / texelWidth;
+    const uint32_t rateHeight = (renderSize.height + texelHeight - 1) / texelHeight;
+    const uint32_t middleRate = caps.supportsFragmentSize(2, 2) ? 2u : 1u;
+    const uint32_t outerRate = caps.supportsFragmentSize(4, 4) ? 4u : middleRate;
+    const auto encodeRate = [](uint32_t rate) -> uint8_t
+    {
+        // VK_FORMAT_R8_UINT encodes log2(width) in bits 0..1 and
+        // log2(height) in bits 2..3. Rates here are square.
+        return static_cast<uint8_t>((rate >> 1) | (rate << 1));
+    };
+
+    std::vector<uint8_t> rates(rateWidth * rateHeight * kMultiViewLayerCount);
+    for (uint32_t eye = 0; eye != kMultiViewLayerCount; ++eye)
+    {
+        for (uint32_t y = 0; y != rateHeight; ++y)
+        {
+            const float ny = (static_cast<float>(y) + 0.5f) / static_cast<float>(rateHeight) * 2.0f - 1.0f;
+            for (uint32_t x = 0; x != rateWidth; ++x)
+            {
+                const float nx =
+                    (static_cast<float>(x) + 0.5f) / static_cast<float>(rateWidth) * 2.0f - 1.0f;
+                const float radiusSquared = nx * nx + ny * ny;
+                const uint32_t rate = radiusSquared < 0.30f * 0.30f
+                                          ? 1u
+                                          : (radiusSquared < 0.65f * 0.65f ? middleRate : outerRate);
+                rates[eye * rateWidth * rateHeight + y * rateWidth + x] = encodeRate(rate);
+            }
+        }
+    }
+
+    rateImage = ctx->createTexture({
+        .format = lvk::Format_R_UI8,
+        .dimensions = {rateWidth, rateHeight},
+        .numLayers = kMultiViewLayerCount,
+        .usage = lvk::TextureUsageBits_FragmentShadingRateAttachment,
+        .data = rates.data(),
+        .debugName = "Fixed foveated fragment shading rate",
+    });
+    if (!rateImage.valid())
+    {
+        LLOGW("Failed to create the fragment shading rate attachment; fixed foveated rendering is disabled.\n");
+        return;
+    }
+
+    attachment = {
+        .texture = rateImage,
+        .texelWidth = texelWidth,
+        .texelHeight = texelHeight,
+    };
+    enabled = true;
+    LLOGL("Fixed foveated rendering: %ux%u rate image, %ux%u pixels/texel, outer rate %ux%u.\n",
+          rateWidth, rateHeight, texelWidth, texelHeight, outerRate, outerRate);
+}
+
 RenderPipelines::RenderPipelines(const std::unique_ptr<lvk::IContext> &ctx, const MeshData &meshData,
                                  lvk::Format depthFormat, lvk::Format shadowMapFormat,
-                                 bool visibilityMaskEnabled)
+                                 bool visibilityMaskEnabled, bool fragmentShadingRateEnabled)
     : opaque(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
              loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.vert"),
-             loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.frag"), false, visibilityMaskEnabled),
+             loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.frag"), false, visibilityMaskEnabled,
+             fragmentShadingRateEnabled),
       masked(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
              loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.vert"),
-             loadShaderModule(ctx, "Renderer/src/gbuffer_masked.frag"), false, visibilityMaskEnabled),
+             loadShaderModule(ctx, "Renderer/src/gbuffer_masked.frag"), false, visibilityMaskEnabled,
+             fragmentShadingRateEnabled),
       transparent(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
                   loadShaderModule(ctx, "Renderer/src/main.vert"),
                   loadShaderModule(ctx, "Renderer/src/transparent.frag"), false, visibilityMaskEnabled),
@@ -331,7 +407,9 @@ lvk::TextureHandle OITPass::combine(const std::unique_ptr<lvk::IContext> &ctx, l
 }
 
 LightingPass::LightingPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets,
-                           lvk::SamplerHandle samplerClamp, lvk::Format swapchainFormat)
+                           lvk::SamplerHandle samplerClamp, lvk::Format swapchainFormat,
+                           const FixedFoveatedRendering &foveation)
+    : fragmentShadingRate(foveation.attachment)
 {
     vert = loadShaderModule(ctx, "data/shaders/QuadFlip.vert");
     frag = loadShaderModule(ctx, "Renderer/shaders/lighting.frag");
@@ -339,6 +417,7 @@ LightingPass::LightingPass(const std::unique_ptr<lvk::IContext> &ctx, const Fram
         .smVert = vert,
         .smFrag = frag,
         .color = {{.format = kOffscreenFormat}},
+        .fragmentShadingRateAttachment = foveation.enabled,
         .debugName = "Pipeline: Lighting",
     });
 }
@@ -348,6 +427,7 @@ lvk::TextureHandle LightingPass::execute(const std::unique_ptr<lvk::IContext> &c
 {
     const lvk::Framebuffer framebufferMain = {
         .color = {{.texture = targets.lightingColor}},
+        .fragmentShadingRate = fragmentShadingRate,
     };
     buf.cmdPushDebugGroupLabel("Lighting", 0xffff00ff);
     pc.invViewProj[0] = gSettings.view.inverseViewProjection[0];
@@ -389,8 +469,10 @@ lvk::TextureHandle LightingPass::execute(const std::unique_ptr<lvk::IContext> &c
 
 HDRPass::HDRPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets,
                  lvk::SamplerHandle samplerClamp, lvk::Format swapchainFormat,
-                 lvk::Format depthStencilFormat, bool visibilityMaskEnabled)
-    : visibilityMaskEnabled(visibilityMaskEnabled)
+                 lvk::Format depthStencilFormat, bool visibilityMaskEnabled,
+                 const FixedFoveatedRendering &foveation)
+    : visibilityMaskEnabled(visibilityMaskEnabled),
+      fragmentShadingRate(foveation.attachment)
 {
     brightPass = ctx->createTexture({
         .format = kHDRBloomFormat,
@@ -480,6 +562,7 @@ HDRPass::HDRPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &
         .stencilFormat = stencilFormat(depthStencilFormat, visibilityMaskEnabled),
         .backFaceStencil = visibilityMaskTestState(depthStencilFormat, visibilityMaskEnabled),
         .frontFaceStencil = visibilityMaskTestState(depthStencilFormat, visibilityMaskEnabled),
+        .fragmentShadingRateAttachment = foveation.enabled,
         .debugName = "Pipeline: ToneMap",
     });
 
@@ -612,6 +695,7 @@ void HDRPass::toneMap(lvk::ICommandBuffer &buf, const lvk::Framebuffer &framebuf
     pc.texLuminance = adaptedLuminance[1].index();
     lvk::Framebuffer framebuffer = framebufferMain;
     framebuffer.depthStencil = {.texture = depthStencil};
+    framebuffer.fragmentShadingRate = fragmentShadingRate;
     buf.cmdBeginRendering({.color = {{.loadOp = lvk::LoadOp_Clear,
                                      .storeOp = lvk::StoreOp_Store,
                                      .clearColor = {0.0f, 0.0f, 0.0f, 1.0f}}},
@@ -646,7 +730,7 @@ void renderGbufferPass(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandB
                        const FrameTargets &targets, const LoadedScene &loadedScene, const Skybox &skyBox,
                        const VKMesh11 &mesh, const RenderPipelines &pipelines, SceneDrawLists &drawLists,
                        const ShadowPass &shadows, LineCanvas3D &canvas3d, const LightFrame &lightFrame,
-                       bool visibilityMaskEnabled)
+                       bool visibilityMaskEnabled, const FixedFoveatedRendering &foveation)
 
 {
     buf.cmdPushDebugGroupLabel("GBuffer", 0xff40ff40);
@@ -656,6 +740,7 @@ void renderGbufferPass(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandB
                   {.texture = targets.gbufferRT2},
                   {.texture = targets.gbufferRT3}},
         .depthStencil = {.texture = targets.opaqueDepth},
+        .fragmentShadingRate = foveation.attachment,
     };
     buf.cmdBeginRendering(
         lvk::RenderPass{
@@ -721,11 +806,12 @@ void renderGbufferPass(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandB
 }
 
 void renderSkyboxPass(lvk::ICommandBuffer &buf, const FrameTargets &targets, const Skybox &skyBox,
-                      bool visibilityMaskEnabled)
+                      bool visibilityMaskEnabled, const FixedFoveatedRendering &foveation)
 {
     const lvk::Framebuffer framebufferSkybox = {
         .color = {{.texture = targets.lightingColor}},
         .depthStencil = {.texture = targets.opaqueDepth},
+        .fragmentShadingRate = foveation.attachment,
     };
     buf.cmdBeginRendering(
         lvk::RenderPass{.color = {{.loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store}},

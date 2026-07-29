@@ -82,6 +82,16 @@ struct BlurPass
     lvk::TextureHandle texOut;
 };
 
+struct FixedFoveatedRendering
+{
+    lvk::Holder<lvk::TextureHandle> rateImage;
+    lvk::Framebuffer::FragmentShadingRateAttachmentDesc attachment;
+    bool enabled = false;
+
+    FixedFoveatedRendering(const std::unique_ptr<lvk::IContext> &ctx,
+                           lvk::Dimensions renderSize, bool requested);
+};
+
 struct RenderPipelines
 {
     VkPipelineDeferred opaque;
@@ -90,7 +100,8 @@ struct RenderPipelines
     VKPipeline shadow;
 
     RenderPipelines(const std::unique_ptr<lvk::IContext> &ctx, const MeshData &meshData, lvk::Format depthFormat,
-                    lvk::Format shadowMapFormat, bool visibilityMaskEnabled);
+                    lvk::Format shadowMapFormat, bool visibilityMaskEnabled,
+                    bool fragmentShadingRateEnabled);
 };
 
 struct VisibilityMaskPass
@@ -132,7 +143,8 @@ struct VisibilityMaskPass
 struct LightingPass
 {
     LightingPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets,
-                 lvk::SamplerHandle samplerClamp, lvk::Format swapchainFormat);
+                 lvk::SamplerHandle samplerClamp, lvk::Format swapchainFormat,
+                 const FixedFoveatedRendering &foveation);
     lvk::TextureHandle execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                                const FrameTargets &targets, const Skybox &skyBox, const ShadowPass &shadows,
                                lvk::SamplerHandle samplerClamp);
@@ -140,6 +152,7 @@ struct LightingPass
     lvk::Holder<lvk::ShaderModuleHandle> vert;
     lvk::Holder<lvk::ShaderModuleHandle> frag;
     lvk::Holder<lvk::RenderPipelineHandle> pipeline;
+    lvk::Framebuffer::FragmentShadingRateAttachmentDesc fragmentShadingRate;
     LightingPassPushConstants pc;
 };
 
@@ -190,9 +203,11 @@ struct HDRPass
     HDRPushConstants pc;
     bool adaptedLuminanceInitialized = false;
     bool visibilityMaskEnabled = false;
+    lvk::Framebuffer::FragmentShadingRateAttachmentDesc fragmentShadingRate;
 
     HDRPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets, lvk::SamplerHandle samplerClamp,
-            lvk::Format swapchainFormat, lvk::Format depthStencilFormat, bool visibilityMaskEnabled);
+            lvk::Format swapchainFormat, lvk::Format depthStencilFormat, bool visibilityMaskEnabled,
+            const FixedFoveatedRendering &foveation);
 
     void execute(lvk::ICommandBuffer &buf, lvk::TextureHandle texColor, float deltaSeconds,
                 lvk::SamplerHandle samplerClamp);
@@ -207,10 +222,10 @@ void renderGbufferPass(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandB
                        const FrameTargets &targets, const LoadedScene &loadedScene, const Skybox &skyBox,
                        const VKMesh11 &mesh, const RenderPipelines &pipelines, SceneDrawLists &drawLists,
                        const ShadowPass &shadows, LineCanvas3D &canvas3d, const LightFrame &lightFrame,
-                       bool visibilityMaskEnabled);
+                       bool visibilityMaskEnabled, const FixedFoveatedRendering &foveation);
 
 void renderSkyboxPass(lvk::ICommandBuffer &buf, const FrameTargets &targets, const Skybox &skyBox,
-                      bool visibilityMaskEnabled);
+                      bool visibilityMaskEnabled, const FixedFoveatedRendering &foveation);
 
 void renderTransparentPass(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                            const FrameTargets &targets, const Skybox &skyBox, const VKMesh11 &mesh,

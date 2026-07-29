@@ -106,7 +106,7 @@ class VKPipeline
     VKPipeline(const std::unique_ptr<lvk::IContext> &ctx, const lvk::VertexInput &streams, lvk::Format colorFormat,
                lvk::Format depthFormat, uint32_t numSamples = 1, lvk ::Holder<lvk::ShaderModuleHandle> &&vert = {},
                lvk::Holder<lvk::ShaderModuleHandle> &&frag = {}, bool positionOnly = false,
-               bool visibilityMaskEnabled = false)
+               bool visibilityMaskEnabled = false, bool fragmentShadingRateEnabled = false)
         : positionOnly_(positionOnly)
     {
         vert_ = vert.valid() ? std::move(vert) : loadShaderModule(ctx, "Renderer/src/main.vert");
@@ -125,6 +125,7 @@ class VKPipeline
             .frontFaceStencil = FinalDemo::visibilityMaskTestState(depthFormat, visibilityMaskEnabled),
             .samplesCount = numSamples,
             .minSampleShading = 0.0f,
+            .fragmentShadingRateAttachment = fragmentShadingRateEnabled,
         });
 
         LVK_ASSERT(pipeline_.valid());
@@ -145,7 +146,7 @@ class VkPipelineDeferred : public VKPipeline
                        lvk::Format colorFormats, lvk::Format depthFormat, uint32_t numSamples = 1,
                        lvk::Holder<lvk::ShaderModuleHandle> &&vert = {},
                        lvk::Holder<lvk::ShaderModuleHandle> &&frag = {}, bool positionOnly = false,
-                       bool visibilityMaskEnabled = false)
+                       bool visibilityMaskEnabled = false, bool fragmentShadingRateEnabled = false)
     {
         positionOnly_ = positionOnly;
         vert_ =
@@ -169,6 +170,7 @@ class VkPipelineDeferred : public VKPipeline
             .frontFaceStencil = FinalDemo::visibilityMaskTestState(depthFormat, visibilityMaskEnabled),
             .samplesCount = numSamples,
             .minSampleShading = 0.0f,
+            .fragmentShadingRateAttachment = fragmentShadingRateEnabled,
         });
         LVK_ASSERT(pipeline_.valid());
     }

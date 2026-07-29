@@ -7,7 +7,7 @@ class Skybox
   public:
     Skybox(const std::unique_ptr<lvk::IContext> &ctx, const char *skyboxTexture, const char *skyboxIrradiance,
            lvk::Format colorFormat, lvk::Format depthFormat, uint32_t numSamples = 1,
-           bool visibilityMaskEnabled = false)
+           bool visibilityMaskEnabled = false, bool fragmentShadingRateEnabled = false)
     {
         texSkybox = loadTexture(ctx, skyboxTexture, lvk::TextureType_Cube);
         texSkyboxIrradiance = loadTexture(ctx, skyboxIrradiance, lvk::TextureType_Cube);
@@ -23,6 +23,7 @@ class Skybox
             .backFaceStencil = FinalDemo::visibilityMaskTestState(depthFormat, visibilityMaskEnabled),
             .frontFaceStencil = FinalDemo::visibilityMaskTestState(depthFormat, visibilityMaskEnabled),
             .samplesCount = numSamples,
+            .fragmentShadingRateAttachment = fragmentShadingRateEnabled,
         });
     }
 
