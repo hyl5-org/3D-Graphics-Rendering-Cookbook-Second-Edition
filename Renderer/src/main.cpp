@@ -45,20 +45,23 @@ VULKAN_APP_MAIN
     // Compute Frustum Cull
     CullingPipeline cullingPipeline(ctx);
 
+    VisibilityMaskPass visibilityMask(ctx, app, app.getDepthFormat());
+
     // Geometry
-    RenderPipelines pipelines(ctx, loadedScene.meshData, app.getDepthFormat(), ctx->getFormat(shadows.map));
+    RenderPipelines pipelines(ctx, loadedScene.meshData, app.getDepthFormat(), ctx->getFormat(shadows.map),
+                              visibilityMask.enabled);
 
     LightingPass lighting(ctx, targets, samplerClamp, app.getColorFormat());
 
-    OITPass oit(ctx, targets.sizeFb);
+    OITPass oit(ctx, targets.sizeFb, app.getDepthFormat(), visibilityMask.enabled);
 
-    HDRPass hdr(ctx, targets, samplerClamp, app.getColorFormat());
+    HDRPass hdr(ctx, targets, samplerClamp, app.getColorFormat(), app.getDepthFormat(),
+                visibilityMask.enabled);
     const Skybox skyBox(ctx, "data/immenstadter_horn_2k_prefilter.ktx", "data/immenstadter_horn_2k_irradiance.ktx",
-                        kOffscreenFormat, app.getDepthFormat(), kNumSamples);
+                        kOffscreenFormat, app.getDepthFormat(), kNumSamples, visibilityMask.enabled);
     VKMesh11Lazy mesh(ctx, loadedScene.meshData, loadedScene.scene);
     SceneDrawLists drawLists(ctx, loadedScene.meshData, mesh);
     SceneCulling culling(ctx, loadedScene, mesh);
-
     app.run(
         [&](uint32_t width, uint32_t height, float aspectRatio, float deltaSeconds)
         {
@@ -101,9 +104,12 @@ VULKAN_APP_MAIN
                 buf.cmdPopDebugGroupLabel();
                 LVK_PROFILER_ZONE_END();
 
+                const bool visibilityMaskEnabled =
+                    visibilityMask.render(ctx, buf, targets.opaqueDepth, gSettings.view.projection);
+
                 LVK_PROFILER_ZONE("Geometry pass", LVK_PROFILER_COLOR_CMD_DRAW);
                 renderGbufferPass(ctx, buf, targets, loadedScene, skyBox, mesh, pipelines, drawLists, shadows,
-                                  canvas3d, lightFrame);
+                                  canvas3d, lightFrame, visibilityMaskEnabled);
                 LVK_PROFILER_ZONE_END();
 
                 lvk::TextureHandle currentColor;
@@ -112,13 +118,14 @@ VULKAN_APP_MAIN
                 LVK_PROFILER_ZONE_END();
 
                 LVK_PROFILER_ZONE("Skybox pass", LVK_PROFILER_COLOR_CMD_DRAW);
-                renderSkyboxPass(buf, targets, skyBox);
+                renderSkyboxPass(buf, targets, skyBox, visibilityMaskEnabled);
                 LVK_PROFILER_ZONE_END();
 
                 if (useOIT)
                 {
                    LVK_PROFILER_ZONE("Transparent pass", LVK_PROFILER_COLOR_CMD_DRAW);
-                   renderTransparentPass(ctx, buf, targets, skyBox, mesh, pipelines, drawLists, oit, shadows);
+                   renderTransparentPass(ctx, buf, targets, skyBox, mesh, pipelines, drawLists, oit, shadows,
+                                         visibilityMaskEnabled);
                    LVK_PROFILER_ZONE_END();
                 }
 
@@ -149,7 +156,7 @@ VULKAN_APP_MAIN
                 }
                 else
                 {
-                    hdr.toneMap(buf, framebufferMain, currentColor);
+                    hdr.toneMap(buf, framebufferMain, targets.opaqueDepth, currentColor);
                 }
                 LVK_PROFILER_ZONE_END();
 

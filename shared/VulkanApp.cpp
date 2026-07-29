@@ -293,7 +293,7 @@ VulkanApp::VulkanApp(const VulkanAppConfig &cfg) : cfg_(cfg)
         height_ = static_cast<int>(xrColorSwapchain_.height);
         depthTexture_ = ctx_->createTexture({
             .type = lvk::TextureType_2D,
-            .format = lvk::Format_Z_F32,
+            .format = lvk::Format_Z_UN24_S_UI8,
             .dimensions = {static_cast<uint32_t>(width_), static_cast<uint32_t>(height_)},
             .numLayers = 2,
             .usage = lvk::TextureUsageBits_Attachment,

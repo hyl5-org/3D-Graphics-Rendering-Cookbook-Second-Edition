@@ -54,6 +54,41 @@ constexpr uint32_t kVertical = 0;
 //constexpr uint32_t kMultiViewLayerCount = 1;
 constexpr uint32_t kMultiViewLayerCount = 2; // 2 views for stereo rendering
 constexpr uint32_t kMultiViewViewMask  = 0b11; // 2 views for stereo rendering
+
+constexpr bool isDepthStencilFormat(lvk::Format format)
+{
+    return format == lvk::Format_Z_UN24_S_UI8 || format == lvk::Format_Z_F32_S_UI8;
+}
+
+constexpr lvk::Format stencilFormat(lvk::Format depthFormat, bool visibilityMaskEnabled = true)
+{
+    return visibilityMaskEnabled && isDepthStencilFormat(depthFormat) ? depthFormat : lvk::Format_Invalid;
+}
+
+constexpr lvk::StencilState visibilityMaskTestState(lvk::Format depthFormat,
+                                                     bool visibilityMaskEnabled = true)
+{
+    return visibilityMaskEnabled && isDepthStencilFormat(depthFormat)
+               ? lvk::StencilState{
+                     .stencilCompareOp = lvk::CompareOp_Equal,
+                     // LVK currently maps readMask to VkStencilOpState::reference.
+                     .readMask = 0,
+                     .writeMask = 0x00,
+                 }
+               : lvk::StencilState{};
+}
+
+constexpr lvk::StencilState visibilityMaskWriteState()
+{
+    return {
+        .depthStencilPassOp = lvk::StencilOp_Replace,
+        .stencilCompareOp = lvk::CompareOp_AlwaysPass,
+        // LVK currently maps readMask to VkStencilOpState::reference.
+        .readMask = 1,
+        .writeMask = 0xff,
+    };
+}
+
 enum CullingMode
 {
     CullingMode_None = 0,

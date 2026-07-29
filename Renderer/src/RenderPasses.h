@@ -90,7 +90,29 @@ struct RenderPipelines
     VKPipeline shadow;
 
     RenderPipelines(const std::unique_ptr<lvk::IContext> &ctx, const MeshData &meshData, lvk::Format depthFormat,
-                    lvk::Format shadowMapFormat);
+                    lvk::Format shadowMapFormat, bool visibilityMaskEnabled);
+};
+
+struct VisibilityMaskPass
+{
+    struct EyeMesh
+    {
+        lvk::Holder<lvk::BufferHandle> vertices;
+        lvk::Holder<lvk::BufferHandle> indices;
+        uint32_t indexCount = 0;
+    };
+
+    std::array<EyeMesh, kMultiViewLayerCount> eyes;
+    lvk::Holder<lvk::ShaderModuleHandle> vert;
+    lvk::Holder<lvk::ShaderModuleHandle> frag;
+    lvk::Holder<lvk::RenderPipelineHandle> pipeline;
+    bool enabled = false;
+
+    VisibilityMaskPass(const std::unique_ptr<lvk::IContext> &ctx, const VulkanApp &app,
+                       lvk::Format depthStencilFormat);
+    bool render(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
+                lvk::TextureHandle depthStencil,
+                const std::array<mat4, kMultiViewLayerCount> &projection) const;
 };
 
  struct ShadowPass
@@ -131,6 +153,7 @@ struct OITPass
     lvk::Holder<lvk::TextureHandle> heads;
     lvk::Holder<lvk::BufferHandle> passBuffer;
     uint32_t maxFragments = 0;
+    bool visibilityMaskEnabled = false;
 
     struct TransparentFragment
     {
@@ -139,7 +162,8 @@ struct OITPass
         uint32_t next;
     };
 
-    OITPass(const std::unique_ptr<lvk::IContext> &ctx, const lvk::Dimensions &sizeFb);
+    OITPass(const std::unique_ptr<lvk::IContext> &ctx, const lvk::Dimensions &sizeFb,
+            lvk::Format depthStencilFormat, bool visibilityMaskEnabled);
 
     void clear(lvk::ICommandBuffer &buf);
     lvk::TextureHandle combine(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
@@ -165,27 +189,31 @@ struct HDRPass
     lvk::Holder<lvk::RenderPipelineHandle> pipelineToneMap;
     HDRPushConstants pc;
     bool adaptedLuminanceInitialized = false;
+    bool visibilityMaskEnabled = false;
 
     HDRPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets, lvk::SamplerHandle samplerClamp,
-            lvk::Format swapchainFormat);
+            lvk::Format swapchainFormat, lvk::Format depthStencilFormat, bool visibilityMaskEnabled);
 
     void execute(lvk::ICommandBuffer &buf, lvk::TextureHandle texColor, float deltaSeconds,
                 lvk::SamplerHandle samplerClamp);
     void runBloom(lvk::ICommandBuffer &buf, lvk::SamplerHandle samplerClamp);
     void runAdaptation(lvk::ICommandBuffer &buf, float deltaSeconds);
-    void toneMap(lvk::ICommandBuffer &buf, const lvk::Framebuffer &framebufferMain, lvk::TextureHandle texColor);
+    void toneMap(lvk::ICommandBuffer &buf, const lvk::Framebuffer &framebufferMain,
+                 lvk::TextureHandle depthStencil, lvk::TextureHandle texColor);
     void swapAdaptedLuminance();
 };
 
 void renderGbufferPass(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                        const FrameTargets &targets, const LoadedScene &loadedScene, const Skybox &skyBox,
                        const VKMesh11 &mesh, const RenderPipelines &pipelines, SceneDrawLists &drawLists,
-                       const ShadowPass &shadows, LineCanvas3D &canvas3d, const LightFrame &lightFrame);
+                       const ShadowPass &shadows, LineCanvas3D &canvas3d, const LightFrame &lightFrame,
+                       bool visibilityMaskEnabled);
 
-void renderSkyboxPass(lvk::ICommandBuffer &buf, const FrameTargets &targets, const Skybox &skyBox);
+void renderSkyboxPass(lvk::ICommandBuffer &buf, const FrameTargets &targets, const Skybox &skyBox,
+                      bool visibilityMaskEnabled);
 
 void renderTransparentPass(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                            const FrameTargets &targets, const Skybox &skyBox, const VKMesh11 &mesh,
                            const RenderPipelines &pipelines, SceneDrawLists &drawLists,
-                           const OITPass &oit, const ShadowPass &shadows);
+                           const OITPass &oit, const ShadowPass &shadows, bool visibilityMaskEnabled);
 } // namespace FinalDemo

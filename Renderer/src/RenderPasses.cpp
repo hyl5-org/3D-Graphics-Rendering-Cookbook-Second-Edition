@@ -10,20 +10,147 @@ namespace FinalDemo
 {
 
 RenderPipelines::RenderPipelines(const std::unique_ptr<lvk::IContext> &ctx, const MeshData &meshData,
-                                 lvk::Format depthFormat, lvk::Format shadowMapFormat)
+                                 lvk::Format depthFormat, lvk::Format shadowMapFormat,
+                                 bool visibilityMaskEnabled)
     : opaque(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
              loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.vert"),
-             loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.frag")),
+             loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.frag"), false, visibilityMaskEnabled),
       masked(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
              loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.vert"),
-             loadShaderModule(ctx, "Renderer/src/gbuffer_masked.frag")),
+             loadShaderModule(ctx, "Renderer/src/gbuffer_masked.frag"), false, visibilityMaskEnabled),
       transparent(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
                   loadShaderModule(ctx, "Renderer/src/main.vert"),
-                  loadShaderModule(ctx, "Renderer/src/transparent.frag")),
+                  loadShaderModule(ctx, "Renderer/src/transparent.frag"), false, visibilityMaskEnabled),
       shadow(ctx, meshData.positionOnlyStreams, lvk::Format_Invalid, shadowMapFormat, 1,
             loadShaderModule(ctx, "Renderer/shaders/shadow.vert"),
             loadShaderModule(ctx, "Renderer/shaders/shadow.frag"), true)
 {
+}
+
+VisibilityMaskPass::VisibilityMaskPass(const std::unique_ptr<lvk::IContext> &ctx, const VulkanApp &app,
+                                       lvk::Format depthStencilFormat)
+    : enabled(app.isOpenXR() && app.isXrVisibilityMaskSupported() &&
+              isDepthStencilFormat(depthStencilFormat))
+{
+    if (!enabled)
+    {
+        return;
+    }
+
+    bool hasGeometry = false;
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+    for (uint32_t eye = 0; eye != kMultiViewLayerCount; ++eye)
+    {
+        std::vector<XrVector2f> xrVertices;
+        std::vector<uint32_t> xrIndices;
+        app.getXrVisibilityMask(eye, xrVertices, xrIndices);
+
+        std::vector<vec2> vertices;
+        vertices.reserve(xrVertices.size());
+        for (const XrVector2f &vertex : xrVertices)
+        {
+            vertices.emplace_back(vertex.x, vertex.y);
+        }
+
+        EyeMesh &mesh = eyes[eye];
+        mesh.indexCount = static_cast<uint32_t>(xrIndices.size());
+        if (vertices.empty() || xrIndices.empty())
+        {
+            continue;
+        }
+
+        mesh.vertices = ctx->createBuffer({
+            .usage = lvk::BufferUsageBits_Storage,
+            .storage = lvk::StorageType_Device,
+            .size = vertices.size() * sizeof(vertices[0]),
+            .data = vertices.data(),
+            .debugName = eye == 0 ? "Visibility mask vertices: left" : "Visibility mask vertices: right",
+        });
+        mesh.indices = ctx->createBuffer({
+            .usage = lvk::BufferUsageBits_Index,
+            .storage = lvk::StorageType_Device,
+            .size = xrIndices.size() * sizeof(xrIndices[0]),
+            .data = xrIndices.data(),
+            .debugName = eye == 0 ? "Visibility mask indices: left" : "Visibility mask indices: right",
+        });
+        hasGeometry = true;
+    }
+#endif
+
+    if (!hasGeometry)
+    {
+        return;
+    }
+
+    vert = loadShaderModule(ctx, "Renderer/shaders/VisibilityMask.vert");
+    frag = loadShaderModule(ctx, "Renderer/shaders/VisibilityMask.frag");
+    pipeline = ctx->createRenderPipeline({
+        .smVert = vert,
+        .smFrag = frag,
+        .depthFormat = depthStencilFormat,
+        .stencilFormat = depthStencilFormat,
+        .cullMode = lvk::CullMode_None,
+        .backFaceStencil = visibilityMaskWriteState(),
+        .frontFaceStencil = visibilityMaskWriteState(),
+        .debugName = "Pipeline: OpenXR visibility mask",
+    });
+    LVK_ASSERT(pipeline.valid());
+}
+
+bool VisibilityMaskPass::render(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
+                                lvk::TextureHandle depthStencil,
+                                const std::array<mat4, kMultiViewLayerCount> &projection) const
+{
+    if (!enabled)
+    {
+        return false;
+    }
+
+    buf.cmdPushDebugGroupLabel("OpenXR visibility mask", 0xff00a0ff);
+    for (uint32_t eye = 0; eye != kMultiViewLayerCount; ++eye)
+    {
+        buf.cmdBeginRendering(
+            {
+                .depth = {
+                    // LightweightVK currently mirrors depth load/store/clear to
+                    // the stencil aspect, so this clears both aspects per eye.
+                    .loadOp = lvk::LoadOp_Clear,
+                    .storeOp = lvk::StoreOp_Store,
+                    .layer = static_cast<uint8_t>(eye),
+                    .clearDepth = 1.0f,
+                    .clearStencil = 0,
+                },
+                .stencil = {
+                    .loadOp = lvk::LoadOp_Clear,
+                    .storeOp = lvk::StoreOp_Store,
+                    .layer = static_cast<uint8_t>(eye),
+                    .clearStencil = 0,
+                },
+            },
+            {.depthStencil = {.texture = depthStencil}});
+
+        const EyeMesh &mesh = eyes[eye];
+        if (pipeline.valid() && mesh.indexCount)
+        {
+            const struct
+            {
+                mat4 projection;
+                uint64_t vertices;
+            } pc = {
+                .projection = projection[eye],
+                .vertices = ctx->gpuAddress(mesh.vertices),
+            };
+
+            buf.cmdBindRenderPipeline(pipeline);
+            buf.cmdBindDepthState({});
+            buf.cmdBindIndexBuffer(mesh.indices, lvk::IndexFormat_UI32);
+            buf.cmdPushConstants(pc);
+            buf.cmdDrawIndexed(mesh.indexCount);
+        }
+        buf.cmdEndRendering();
+    }
+    buf.cmdPopDebugGroupLabel();
+    return true;
 }
 
 ShadowPass::ShadowPass(const std::unique_ptr<lvk::IContext> &ctx)
@@ -88,7 +215,9 @@ void ShadowPass::updateIfNeeded(lvk::ICommandBuffer &buf, const VKMesh11 &mesh, 
                         });
 }
 
-OITPass::OITPass(const std::unique_ptr<lvk::IContext> &ctx, const lvk::Dimensions &sizeFb)
+OITPass::OITPass(const std::unique_ptr<lvk::IContext> &ctx, const lvk::Dimensions &sizeFb,
+                 lvk::Format depthStencilFormat, bool visibilityMaskEnabled)
+    : visibilityMaskEnabled(visibilityMaskEnabled)
 {
    vert = loadShaderModule(ctx, "data/shaders/QuadFlip.vert");
    frag = loadShaderModule(ctx, "Renderer/shaders/oit.frag");
@@ -96,6 +225,10 @@ OITPass::OITPass(const std::unique_ptr<lvk::IContext> &ctx, const lvk::Dimension
        .smVert = vert,
        .smFrag = frag,
        .color = {{.format = kOffscreenFormat}},
+       .depthFormat = depthStencilFormat,
+       .stencilFormat = stencilFormat(depthStencilFormat, visibilityMaskEnabled),
+       .backFaceStencil = visibilityMaskTestState(depthStencilFormat, visibilityMaskEnabled),
+       .frontFaceStencil = visibilityMaskTestState(depthStencilFormat, visibilityMaskEnabled),
        .debugName = "Pipeline: OIT Combine",
    });
 
@@ -155,9 +288,20 @@ lvk::TextureHandle OITPass::combine(const std::unique_ptr<lvk::IContext> &ctx, l
 {
    buf.cmdPushDebugGroupLabel("OIT Combine", 0xffff80ff);
    buf.cmdBeginRendering(lvk::RenderPass{
-       .color = {{.loadOp = lvk::LoadOp_DontCare, .storeOp = lvk::StoreOp_Store}},
+       .color = {{.loadOp = lvk::LoadOp_Clear,
+                  .storeOp = lvk::StoreOp_Store,
+                  .clearColor = {0.0f, 0.0f, 0.0f, 1.0f}}},
+       .depth = {.loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store},
+       .stencil = visibilityMaskEnabled
+                      ? lvk::RenderPass::AttachmentDesc{.loadOp = lvk::LoadOp_Load,
+                                                        .storeOp = lvk::StoreOp_Store}
+                      : lvk::RenderPass::AttachmentDesc{.loadOp = lvk::LoadOp_DontCare,
+                                                        .storeOp = lvk::StoreOp_DontCare},
        .viewMask = kMultiViewViewMask},
-       lvk::Framebuffer{.color = {{.texture = targets.sceneColor}}},
+       lvk::Framebuffer{
+           .color = {{.texture = targets.sceneColor}},
+           .depthStencil = {.texture = targets.opaqueDepth},
+       },
 
        {.textures = {lvk::TextureHandle(heads), texColor}, .buffers = {lvk::BufferHandle(fragmentLists)}});
 
@@ -217,7 +361,7 @@ lvk::TextureHandle LightingPass::execute(const std::unique_ptr<lvk::IContext> &c
     pc.sampler = samplerClamp.index();
     pc.bufferLight = ctx->gpuAddress(shadows.lightBuffer);
 
-    buf.cmdBeginRendering({.color = {{.loadOp = lvk::LoadOp_DontCare,
+    buf.cmdBeginRendering({.color = {{.loadOp = lvk::LoadOp_Clear,
                                       .storeOp = lvk::StoreOp_Store,
                                       .clearColor = {0.0f, 0.0f, 0.0f, 1.0f}}},
                            //.layerCount = kMultiViewLayerCount,
@@ -244,7 +388,9 @@ lvk::TextureHandle LightingPass::execute(const std::unique_ptr<lvk::IContext> &c
 }
 
 HDRPass::HDRPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets,
-                 lvk::SamplerHandle samplerClamp, lvk::Format swapchainFormat)
+                 lvk::SamplerHandle samplerClamp, lvk::Format swapchainFormat,
+                 lvk::Format depthStencilFormat, bool visibilityMaskEnabled)
+    : visibilityMaskEnabled(visibilityMaskEnabled)
 {
     brightPass = ctx->createTexture({
         .format = kHDRBloomFormat,
@@ -330,6 +476,10 @@ HDRPass::HDRPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &
         .smVert = vertToneMap,
         .smFrag = fragToneMap,
         .color = {{.format = swapchainFormat}},
+        .depthFormat = depthStencilFormat,
+        .stencilFormat = stencilFormat(depthStencilFormat, visibilityMaskEnabled),
+        .backFaceStencil = visibilityMaskTestState(depthStencilFormat, visibilityMaskEnabled),
+        .frontFaceStencil = visibilityMaskTestState(depthStencilFormat, visibilityMaskEnabled),
         .debugName = "Pipeline: ToneMap",
     });
 
@@ -454,15 +604,28 @@ void HDRPass::runAdaptation(lvk::ICommandBuffer &buf, float deltaSeconds)
     buf.cmdPopDebugGroupLabel();
 }
 
-void HDRPass::toneMap(lvk::ICommandBuffer &buf, const lvk::Framebuffer &framebufferMain, lvk::TextureHandle texColor)
+void HDRPass::toneMap(lvk::ICommandBuffer &buf, const lvk::Framebuffer &framebufferMain,
+                      lvk::TextureHandle depthStencil, lvk::TextureHandle texColor)
 {
     buf.cmdPushDebugGroupLabel("ToneMap", 0xffff00ff);
     pc.texColor = texColor.index();
     pc.texLuminance = adaptedLuminance[1].index();
-    buf.cmdBeginRendering({.color = {{.loadOp = lvk::LoadOp_DontCare, .clearColor = {1.0f, 1.0f, 1.0f, 1.0f}}},
+    lvk::Framebuffer framebuffer = framebufferMain;
+    framebuffer.depthStencil = {.texture = depthStencil};
+    buf.cmdBeginRendering({.color = {{.loadOp = lvk::LoadOp_Clear,
+                                     .storeOp = lvk::StoreOp_Store,
+                                     .clearColor = {0.0f, 0.0f, 0.0f, 1.0f}}},
+                           .depth = {.loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store},
+                           .stencil = visibilityMaskEnabled
+                                          ? lvk::RenderPass::AttachmentDesc{
+                                                .loadOp = lvk::LoadOp_Load,
+                                                .storeOp = lvk::StoreOp_Store}
+                                          : lvk::RenderPass::AttachmentDesc{
+                                                .loadOp = lvk::LoadOp_DontCare,
+                                                .storeOp = lvk::StoreOp_DontCare},
                            //.layerCount = kMultiViewLayerCount,
                            .viewMask  = kMultiViewViewMask},
-                          framebufferMain,
+                          framebuffer,
                           {.textures = {texColor,
                                         lvk::TextureHandle(bloomPass),
                                         lvk::TextureHandle(adaptedLuminance[1])}});
@@ -482,7 +645,8 @@ void HDRPass::swapAdaptedLuminance()
 void renderGbufferPass(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                        const FrameTargets &targets, const LoadedScene &loadedScene, const Skybox &skyBox,
                        const VKMesh11 &mesh, const RenderPipelines &pipelines, SceneDrawLists &drawLists,
-                        const ShadowPass &shadows, LineCanvas3D &canvas3d, const LightFrame &lightFrame)
+                       const ShadowPass &shadows, LineCanvas3D &canvas3d, const LightFrame &lightFrame,
+                       bool visibilityMaskEnabled)
 
 {
     buf.cmdPushDebugGroupLabel("GBuffer", 0xff40ff40);
@@ -500,7 +664,14 @@ void renderGbufferPass(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandB
                  {.loadOp = lvk::LoadOp_Clear, .storeOp = lvk::StoreOp_Store, .clearColor = {0.5f, 0.5f, 1.0f, 1.0f}},
                  {.loadOp = lvk::LoadOp_Clear, .storeOp = lvk::StoreOp_Store, .clearColor = {0.0f, 0.5f, 1.0f, 0.0f}},
                  {.loadOp = lvk::LoadOp_Clear, .storeOp = lvk::StoreOp_Store, .clearColor = {0.0f, 0.0f, 0.0f, 1.0f}}},
-            .depth = {.loadOp = lvk::LoadOp_Clear, .storeOp = lvk::StoreOp_Store, .clearDepth = 1.0f},
+            .depth = {.loadOp = visibilityMaskEnabled ? lvk::LoadOp_Load : lvk::LoadOp_Clear,
+                      .storeOp = lvk::StoreOp_Store,
+                      .clearDepth = 1.0f},
+            .stencil = visibilityMaskEnabled
+                           ? lvk::RenderPass::AttachmentDesc{.loadOp = lvk::LoadOp_Load,
+                                                             .storeOp = lvk::StoreOp_Store}
+                           : lvk::RenderPass::AttachmentDesc{.loadOp = lvk::LoadOp_DontCare,
+                                                             .storeOp = lvk::StoreOp_DontCare},
             //.layerCount = kMultiViewLayerCount,
             .viewMask  = kMultiViewViewMask},
         framebufferOpaque,
@@ -549,7 +720,8 @@ void renderGbufferPass(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandB
     buf.cmdPopDebugGroupLabel();
 }
 
-void renderSkyboxPass(lvk::ICommandBuffer &buf, const FrameTargets &targets, const Skybox &skyBox)
+void renderSkyboxPass(lvk::ICommandBuffer &buf, const FrameTargets &targets, const Skybox &skyBox,
+                      bool visibilityMaskEnabled)
 {
     const lvk::Framebuffer framebufferSkybox = {
         .color = {{.texture = targets.lightingColor}},
@@ -558,10 +730,17 @@ void renderSkyboxPass(lvk::ICommandBuffer &buf, const FrameTargets &targets, con
     buf.cmdBeginRendering(
         lvk::RenderPass{.color = {{.loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store}},
                         .depth = {.loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store},
+                        .stencil = visibilityMaskEnabled
+                                       ? lvk::RenderPass::AttachmentDesc{
+                                             .loadOp = lvk::LoadOp_Load,
+                                             .storeOp = lvk::StoreOp_Store}
+                                       : lvk::RenderPass::AttachmentDesc{
+                                             .loadOp = lvk::LoadOp_DontCare,
+                                             .storeOp = lvk::StoreOp_DontCare},
                         //.layerCount = kMultiViewLayerCount,
                         .viewMask  = kMultiViewViewMask},
         framebufferSkybox,
-        {.textures = {lvk::TextureHandle(skyBox.texSkybox), lvk::TextureHandle(targets.opaqueDepth)}});
+        {.textures = {lvk::TextureHandle(skyBox.texSkybox)}});
     skyBox.draw(buf);
     buf.cmdEndRendering();
 }
@@ -569,7 +748,7 @@ void renderSkyboxPass(lvk::ICommandBuffer &buf, const FrameTargets &targets, con
 void renderTransparentPass(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                            const FrameTargets &targets, const Skybox &skyBox, const VKMesh11 &mesh,
                            const RenderPipelines &pipelines, SceneDrawLists &drawLists, const OITPass &oit,
-                           const ShadowPass &shadows)
+                           const ShadowPass &shadows, bool visibilityMaskEnabled)
 {
     if (!gSettings.draw.meshesTransparent)
     {
@@ -583,12 +762,18 @@ void renderTransparentPass(const std::unique_ptr<lvk::IContext> &ctx, lvk::IComm
     };
     buf.cmdBeginRendering(lvk::RenderPass{.color = {{.loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store}},
                                           .depth = {.loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store},
+                                          .stencil = visibilityMaskEnabled
+                                                         ? lvk::RenderPass::AttachmentDesc{
+                                                               .loadOp = lvk::LoadOp_Load,
+                                                               .storeOp = lvk::StoreOp_Store}
+                                                         : lvk::RenderPass::AttachmentDesc{
+                                                               .loadOp = lvk::LoadOp_DontCare,
+                                                               .storeOp = lvk::StoreOp_DontCare},
                                           .viewMask = kMultiViewViewMask},
                           framebufferTransparent,
                           {.textures =
                                {
                                    lvk::TextureHandle(oit.heads),
-                                   lvk::TextureHandle(targets.opaqueDepth),
                                    lvk::TextureHandle(targets.lightingColor),
                                    lvk::TextureHandle(skyBox.texSkybox),
                                    lvk::TextureHandle(skyBox.texSkyboxIrradiance),

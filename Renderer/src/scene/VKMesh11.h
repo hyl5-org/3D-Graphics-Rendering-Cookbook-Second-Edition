@@ -105,7 +105,8 @@ class VKPipeline
 
     VKPipeline(const std::unique_ptr<lvk::IContext> &ctx, const lvk::VertexInput &streams, lvk::Format colorFormat,
                lvk::Format depthFormat, uint32_t numSamples = 1, lvk ::Holder<lvk::ShaderModuleHandle> &&vert = {},
-               lvk::Holder<lvk::ShaderModuleHandle> &&frag = {}, bool positionOnly = false)
+               lvk::Holder<lvk::ShaderModuleHandle> &&frag = {}, bool positionOnly = false,
+               bool visibilityMaskEnabled = false)
         : positionOnly_(positionOnly)
     {
         vert_ = vert.valid() ? std::move(vert) : loadShaderModule(ctx, "Renderer/src/main.vert");
@@ -118,7 +119,10 @@ class VKPipeline
             .smFrag = frag_,
             .color = {{.format = colorFormat}},
             .depthFormat = depthFormat,
+            .stencilFormat = FinalDemo::stencilFormat(depthFormat, visibilityMaskEnabled),
             .cullMode = lvk::CullMode_Back,
+            .backFaceStencil = FinalDemo::visibilityMaskTestState(depthFormat, visibilityMaskEnabled),
+            .frontFaceStencil = FinalDemo::visibilityMaskTestState(depthFormat, visibilityMaskEnabled),
             .samplesCount = numSamples,
             .minSampleShading = 0.0f,
         });
@@ -140,7 +144,8 @@ class VkPipelineDeferred : public VKPipeline
     VkPipelineDeferred(const std::unique_ptr<lvk::IContext> &ctx, const lvk::VertexInput &streams,
                        lvk::Format colorFormats, lvk::Format depthFormat, uint32_t numSamples = 1,
                        lvk::Holder<lvk::ShaderModuleHandle> &&vert = {},
-                       lvk::Holder<lvk::ShaderModuleHandle> &&frag = {}, bool positionOnly = false)
+                       lvk::Holder<lvk::ShaderModuleHandle> &&frag = {}, bool positionOnly = false,
+                       bool visibilityMaskEnabled = false)
     {
         positionOnly_ = positionOnly;
         vert_ =
@@ -158,7 +163,10 @@ class VkPipelineDeferred : public VKPipeline
             .smFrag = frag_,
             .color = {attachments[0], attachments[1], attachments[2], attachments[3]},
             .depthFormat = depthFormat,
+            .stencilFormat = FinalDemo::stencilFormat(depthFormat, visibilityMaskEnabled),
             .cullMode = lvk::CullMode_Back,
+            .backFaceStencil = FinalDemo::visibilityMaskTestState(depthFormat, visibilityMaskEnabled),
+            .frontFaceStencil = FinalDemo::visibilityMaskTestState(depthFormat, visibilityMaskEnabled),
             .samplesCount = numSamples,
             .minSampleShading = 0.0f,
         });
