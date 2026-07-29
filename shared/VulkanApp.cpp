@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cfloat>
+#include <cstring>
 #include <cstdlib>
 #include <cmath>
 #include <string>
@@ -743,9 +744,32 @@ bool xrStringToPathChecked(XrInstance instance, const char *pathText, XrPath *pa
 
 void VulkanApp::initOpenXR()
 {
-    const char *extensions[] = {
-        XR_KHR_VULKAN_ENABLE_EXTENSION_NAME,
+    uint32_t availableExtensionCount = 0;
+    XR_ASSERT(xrEnumerateInstanceExtensionProperties(nullptr, 0, &availableExtensionCount, nullptr));
+    std::vector<XrExtensionProperties> availableExtensions(
+        availableExtensionCount, XrExtensionProperties{.type = XR_TYPE_EXTENSION_PROPERTIES});
+    XR_ASSERT(xrEnumerateInstanceExtensionProperties(nullptr, availableExtensionCount,
+                                                     &availableExtensionCount, availableExtensions.data()));
+
+    const auto hasExtension = [&](const char *name)
+    {
+        return std::any_of(availableExtensions.begin(), availableExtensions.end(),
+                           [&](const XrExtensionProperties &extension)
+                           {
+                               return std::strcmp(extension.extensionName, name) == 0;
+                           });
     };
+
+    std::vector<const char *> extensions = {XR_KHR_VULKAN_ENABLE_EXTENSION_NAME};
+    const bool visibilityMaskAvailable = hasExtension(XR_KHR_VISIBILITY_MASK_EXTENSION_NAME);
+    if (visibilityMaskAvailable)
+    {
+        extensions.push_back(XR_KHR_VISIBILITY_MASK_EXTENSION_NAME);
+    }
+    else
+    {
+        LLOGW("OpenXR runtime does not support XR_KHR_visibility_mask; hidden-area rendering is disabled.\n");
+    }
 
     const XrInstanceCreateInfo instanceCI = {
         .type = XR_TYPE_INSTANCE_CREATE_INFO,
@@ -757,8 +781,8 @@ void VulkanApp::initOpenXR()
                 .engineVersion = 1,
                 .apiVersion = XR_API_VERSION_1_1,
             },
-        .enabledExtensionCount = 1,
-        .enabledExtensionNames = extensions,
+        .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
+        .enabledExtensionNames = extensions.data(),
     };
 
     const XrResult result = xrCreateInstance(&instanceCI, &xrInstance_);
@@ -768,6 +792,19 @@ void VulkanApp::initOpenXR()
               lvk::xrResultToString(result));
         LVK_ASSERT(false);
         return;
+    }
+
+    if (visibilityMaskAvailable)
+    {
+        const XrResult procResult =
+            xrGetInstanceProcAddr(xrInstance_, "xrGetVisibilityMaskKHR",
+                                  reinterpret_cast<PFN_xrVoidFunction *>(&xrGetVisibilityMaskKHR_));
+        if (XR_FAILED(procResult) || !xrGetVisibilityMaskKHR_)
+        {
+            LLOGW("OpenXR runtime did not provide xrGetVisibilityMaskKHR (%s); hidden-area rendering is disabled.\n",
+                  lvk::xrResultToString(procResult));
+            xrGetVisibilityMaskKHR_ = nullptr;
+        }
     }
 
     XrInstanceProperties instanceProps = {.type = XR_TYPE_INSTANCE_PROPERTIES};
@@ -1288,6 +1325,73 @@ vec3 VulkanApp::getXrEyeWorldPosition(uint32_t eye) const
 {
     const mat4 worldFromEye = getXrWorldFromLocalMatrix() * getXrLocalFromViewMatrix(eye);
     return vec3(worldFromEye[3]);
+}
+
+void VulkanApp::getXrVisibilityMask(uint32_t eye, std::vector<XrVector2f> &vertices,
+                                    std::vector<uint32_t> &indices) const
+{
+    vertices.clear();
+    indices.clear();
+    if (!xrGetVisibilityMaskKHR_)
+    {
+        return;
+    }
+
+    XrVisibilityMaskKHR mask = {.type = XR_TYPE_VISIBILITY_MASK_KHR};
+
+    // First call: query the vertex and index counts.
+    XrResult result =
+        xrGetVisibilityMaskKHR_(xrSession_, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, eye,
+                                XR_VISIBILITY_MASK_TYPE_HIDDEN_TRIANGLE_MESH_KHR, &mask);
+    if (XR_FAILED(result))
+    {
+        LLOGW("xrGetVisibilityMaskKHR(counts) failed for view %u: %s\n", eye,
+              lvk::xrResultToString(result));
+        return;
+    }
+
+    vertices.resize(mask.vertexCountOutput);
+    indices.resize(mask.indexCountOutput);
+    if (vertices.empty() || indices.empty())
+    {
+        vertices.clear();
+        indices.clear();
+        return;
+    }
+
+    // Second call: provide buffers with the capacities returned by the first call.
+    // Retry if the runtime changes the mask between the two calls.
+    for (uint32_t attempt = 0; attempt != 3; ++attempt)
+    {
+        mask.vertexCapacityInput = static_cast<uint32_t>(vertices.size());
+        mask.vertices = vertices.data();
+        mask.indexCapacityInput = static_cast<uint32_t>(indices.size());
+        mask.indices = indices.data();
+        result = xrGetVisibilityMaskKHR_(xrSession_, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, eye,
+                                         XR_VISIBILITY_MASK_TYPE_HIDDEN_TRIANGLE_MESH_KHR, &mask);
+        if (result == XR_ERROR_SIZE_INSUFFICIENT)
+        {
+            vertices.resize(mask.vertexCountOutput);
+            indices.resize(mask.indexCountOutput);
+            continue;
+        }
+        if (XR_FAILED(result))
+        {
+            LLOGW("xrGetVisibilityMaskKHR(data) failed for view %u: %s\n", eye,
+                  lvk::xrResultToString(result));
+            vertices.clear();
+            indices.clear();
+            return;
+        }
+
+        vertices.resize(mask.vertexCountOutput);
+        indices.resize(mask.indexCountOutput);
+        return;
+    }
+
+    LLOGW("OpenXR visibility mask kept changing while querying view %u.\n", eye);
+    vertices.clear();
+    indices.clear();
 }
 
 bool VulkanApp::renderXrFrame(DrawFrameFunc &drawFrame)

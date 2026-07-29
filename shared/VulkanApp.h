@@ -121,6 +121,18 @@ class VulkanApp
     mat4 getEyeViewProjectionMatrix(uint32_t eye, float zNear,
                                     float zFar) const;
     vec3 getEyePosition(uint32_t eye) const;
+    bool isXrVisibilityMaskSupported() const
+    {
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+        return xrGetVisibilityMaskKHR_ != nullptr;
+#else
+        return false;
+#endif
+    }
+#if defined(LVK_WITH_OPENXR) && LVK_WITH_OPENXR
+    void getXrVisibilityMask(uint32_t eye, std::vector<XrVector2f> &vertices,
+                             std::vector<uint32_t> &indices) const;
+#endif
     lvk::TextureHandle getDepthTexture() const
     {
         return depthTexture_;
@@ -191,10 +203,10 @@ class VulkanApp
     mat4 getXrLocalFromViewMatrix(uint32_t eye) const;
     mat4 getXrProjectionMatrix(uint32_t eye, float zNear, float zFar) const;
     vec3 getXrEyeWorldPosition(uint32_t eye) const;
-
     XrInstance xrInstance_ = XR_NULL_HANDLE;
     XrSystemId xrSystemId_ = XR_NULL_SYSTEM_ID;
     XrSession xrSession_ = XR_NULL_HANDLE;
+    PFN_xrGetVisibilityMaskKHR xrGetVisibilityMaskKHR_ = nullptr;
     XrSpace xrAppSpace_ = XR_NULL_HANDLE;
     XrSessionState xrSessionState_ = XR_SESSION_STATE_UNKNOWN;
     bool xrSessionRunning_ = false;
