@@ -12,6 +12,10 @@
 #include <unordered_map>
 #include <vector>
 
+#if defined(_WIN32)
+#include <Windows.h>
+#endif
+
 #if defined(ANDROID)
 #include <android/native_window.h>
 #include <sys/stat.h>
@@ -595,6 +599,107 @@ void VulkanApp::run(DrawFrameFunc drawFrame)
 
 namespace
 {
+#if defined(_WIN32)
+// Minimal ABI-compatible subset of renderdoc_app.h. Loading the API dynamically
+// keeps RenderDoc an optional runtime dependency.
+using RenderDocFunction = void(__cdecl *)();
+using RenderDocSetCaptureKeys = void(__cdecl *)(int *keys, int numKeys);
+using RenderDocStartFrameCapture = void(__cdecl *)(void *device, void *window);
+using RenderDocIsFrameCapturing = uint32_t(__cdecl *)();
+using RenderDocEndFrameCapture = uint32_t(__cdecl *)(void *device, void *window);
+using RenderDocGetApi = int(__cdecl *)(int version, void **api);
+
+struct RenderDocApi100
+{
+    RenderDocFunction functionsBeforeSetCaptureKeys[6];
+    RenderDocSetCaptureKeys setCaptureKeys;
+    RenderDocFunction functionsBeforeStartFrameCapture[12];
+    RenderDocStartFrameCapture startFrameCapture;
+    RenderDocIsFrameCapturing isFrameCapturing;
+    RenderDocEndFrameCapture endFrameCapture;
+};
+
+RenderDocApi100 *getRenderDocApi()
+{
+    static RenderDocApi100 *api = []() -> RenderDocApi100 *
+    {
+        const HMODULE module = GetModuleHandleA("renderdoc.dll");
+        if (!module)
+        {
+            return nullptr;
+        }
+
+        const auto getApi =
+            reinterpret_cast<RenderDocGetApi>(GetProcAddress(module, "RENDERDOC_GetAPI"));
+        RenderDocApi100 *result = nullptr;
+        constexpr int renderDocApiVersion100 = 10000;
+        if (!getApi ||
+            getApi(renderDocApiVersion100, reinterpret_cast<void **>(&result)) != 1 ||
+            !result)
+        {
+            return nullptr;
+        }
+
+        // The application owns the F12 edge and supplies the otherwise missing
+        // headless/OpenXR frame boundary below.
+        result->setCaptureKeys(nullptr, 0);
+        LLOGL("RenderDoc detected: press F12 to capture one complete OpenXR render frame.\n");
+        return result;
+    }();
+    return api;
+}
+
+void *getRenderDocVulkanDevicePointer(VkInstance instance)
+{
+    // This is RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE from renderdoc_app.h.
+    return instance ? *reinterpret_cast<void **>(instance) : nullptr;
+}
+
+bool beginRenderDocXrCapture(VkInstance instance)
+{
+    RenderDocApi100 *api = getRenderDocApi();
+    if (!api)
+    {
+        return false;
+    }
+
+    static bool wasF12Down = false;
+    const bool isF12Down = (GetAsyncKeyState(VK_F12) & 0x8000) != 0;
+    const bool captureRequested = isF12Down && !wasF12Down;
+    wasF12Down = isF12Down;
+
+    // Never overlap a capture which may have been requested externally.
+    if (!captureRequested || api->isFrameCapturing())
+    {
+        return false;
+    }
+
+    api->startFrameCapture(getRenderDocVulkanDevicePointer(instance), nullptr);
+    return api->isFrameCapturing() != 0;
+}
+
+void endRenderDocXrCapture(VkInstance instance)
+{
+    RenderDocApi100 *api = getRenderDocApi();
+    if (api && api->isFrameCapturing())
+    {
+        if (!api->endFrameCapture(getRenderDocVulkanDevicePointer(instance), nullptr))
+        {
+            LLOGW("RenderDoc failed to save the OpenXR frame capture.\n");
+        }
+    }
+}
+#else
+bool beginRenderDocXrCapture(VkInstance)
+{
+    return false;
+}
+
+void endRenderDocXrCapture(VkInstance)
+{
+}
+#endif
+
 glm::quat xrQuatToGlm(const XrQuaternionf &q)
 {
     return glm::normalize(glm::quat(q.w, q.x, q.y, q.z));
@@ -1252,9 +1357,16 @@ bool VulkanApp::renderXrFrame(DrawFrameFunc &drawFrame)
     width_ = static_cast<int>(xrColorSwapchain_.width);
     height_ = static_cast<int>(xrColorSwapchain_.height);
 
+    const VkInstance vkInstance =
+        static_cast<lvk::VulkanContext *>(ctx_.get())->getVkInstance();
+    const bool captureRenderDocFrame = beginRenderDocXrCapture(vkInstance);
     drawFrame(xrColorSwapchain_.width, xrColorSwapchain_.height,
               xrColorSwapchain_.width / static_cast<float>(xrColorSwapchain_.height), deltaSeconds);
     ctx_->wait({});
+    if (captureRenderDocFrame)
+    {
+        endRenderDocXrCapture(vkInstance);
+    }
 
     xrColorSwapchain_.release();
     currentOutputTexture_ = {};
