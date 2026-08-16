@@ -8,14 +8,14 @@ TabWidth: 4
 UseTab: Never
 LineEnding: LF
 
-BreakBeforeBraces: Allman
-InsertBraces: true
+# BreakBeforeBraces: Allman
+# InsertBraces: true
 
-AllowShortBlocksOnASingleLine: Never
-AllowShortCaseLabelsOnASingleLine: false
-AllowShortEnumsOnASingleLine: false
-AllowShortFunctionsOnASingleLine: None
-AllowShortIfStatementsOnASingleLine: Never
-AllowShortLambdasOnASingleLine: None
-AllowShortLoopsOnASingleLine: false
-AllowShortNamespacesOnASingleLine: false
+# AllowShortBlocksOnASingleLine: Never
+# AllowShortCaseLabelsOnASingleLine: false
+# AllowShortEnumsOnASingleLine: false
+# AllowShortFunctionsOnASingleLine: None
+# AllowShortIfStatementsOnASingleLine: Never
+# AllowShortLambdasOnASingleLine: None
+# AllowShortLoopsOnASingleLine: false
+# AllowShortNamespacesOnASingleLine: false
