@@ -175,5 +175,6 @@ void mergeMaterialLists(const std::vector<std::vector<Material> *> &oldMaterials
         replaceTexture(i, &m.emissiveTexture);
         replaceTexture(i, &m.normalTexture);
         replaceTexture(i, &m.opacityTexture);
+        replaceTexture(i, &m.metallicRoughnessTexture);
     }
 }

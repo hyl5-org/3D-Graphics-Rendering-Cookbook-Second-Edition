@@ -92,6 +92,7 @@ struct Material
     int emissiveTexture = -1;
     int normalTexture = -1;
     int opacityTexture = -1;
+    int metallicRoughnessTexture = -1;
     uint32_t flags = sMaterialFlags_CastShadow | sMaterialFlags_ReceiveShadow;
 };
 

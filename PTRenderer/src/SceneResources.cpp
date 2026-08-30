@@ -236,7 +236,8 @@ FrameTargets createGBufferTargets(const std::unique_ptr<lvk::IContext> &ctx, lvk
         .lightingColor = ctx->createTexture({
             .format = lvk::Format::Format_R11G11B10_F,
             .dimensions = sizeFb,
-            .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
+            .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled |
+                     lvk::TextureUsageBits_Storage,
             .debugName = "lightingColor",
         }),
         .gbufferRT1 = ctx->createTexture({
@@ -284,6 +285,7 @@ LightFrame buildLightFrame(const LightParams &light, const BoundingBox &sceneBou
         .dir = lightDir,
         .view = lightView,
         .proj = glm::orthoLH_ZO(boxLS.min_.x, boxLS.max_.x, boxLS.min_.y, boxLS.max_.y, boxLS.max_.z, boxLS.min_.z),
+        .enabled = light.enabled,
     };
 }
 

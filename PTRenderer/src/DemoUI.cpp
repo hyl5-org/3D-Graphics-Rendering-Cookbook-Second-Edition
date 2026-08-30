@@ -60,6 +60,7 @@ void drawControls(uint32_t width, uint32_t height, float aspectRatio, SceneCulli
     ImGui::Checkbox("Opaque meshes", &gSettings.draw.meshesOpaque);
     ImGui::Checkbox("Bounding boxes", &gSettings.draw.boxes);
     ImGui::Checkbox("Light frustum", &gSettings.draw.lightFrustum);
+    ImGui::Checkbox("Directional light", &gSettings.light.enabled);
     ImGui::Unindent(indentSize);
     ImGui::Separator();
 

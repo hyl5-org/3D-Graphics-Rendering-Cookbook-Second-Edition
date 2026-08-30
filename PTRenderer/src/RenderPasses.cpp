@@ -8,11 +8,11 @@ namespace FinalDemo
 RenderPipelines::RenderPipelines(const std::unique_ptr<lvk::IContext> &ctx, const MeshData &meshData,
                                  lvk::Format depthFormat)
     : opaque(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
-             loadShaderModule(ctx, "Renderer/shaders/gbuffer_opaque.vert"),
-             loadShaderModule(ctx, "Renderer/shaders/gbuffer_opaque.frag")),
+             loadShaderModule(ctx, "PTRenderer/shaders/gbuffer_opaque.vert"),
+             loadShaderModule(ctx, "PTRenderer/shaders/gbuffer_opaque.frag")),
       masked(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
-             loadShaderModule(ctx, "Renderer/shaders/gbuffer_opaque.vert"),
-             loadShaderModule(ctx, "Renderer/shaders/gbuffer_masked.frag"))
+             loadShaderModule(ctx, "PTRenderer/shaders/gbuffer_opaque.vert"),
+             loadShaderModule(ctx, "PTRenderer/shaders/gbuffer_masked.frag"))
 {
 }
 
@@ -138,49 +138,87 @@ RenderPipelines::RenderPipelines(const std::unique_ptr<lvk::IContext> &ctx, cons
 // }
 
 
-PrimaryRayPass::PrimaryRayPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets,
-                           lvk::SamplerHandle samplerClamp, lvk::Format swapchainFormat)
+PrimaryRayPass::PrimaryRayPass(const std::unique_ptr<lvk::IContext> &ctx, const BoundingBox &worldBounds)
 {
-    //vert = loadShaderModule(ctx, "data/shaders/QuadFlip.vert");
-    //frag = loadShaderModule(ctx, "Renderer/shaders/lighting.frag");
-    shader = loadShaderModule(ctx, "PTRenderer/shaders/primary.comp");
+    shader = loadShaderModule(ctx, "PTRenderer/shaders/primary_ray_shade.comp");
     pipeline = ctx->createComputePipeline({
         .smComp = shader,
         .debugName = "Pipeline: Primary",
     });
+    blueNoise = loadTexture(ctx, "data/blue_noise_128x128x64.png");
+
+    lights.resize(kPunctualLightCount);
+    uint32_t randomState = 0x9e3779b9u;
+    const auto random01 = [&randomState]()
+    {
+        randomState = randomState * 1664525u + 1013904223u;
+        return float(randomState >> 8u) * (1.0f / 16777216.0f);
+    };
+    const auto randomVec3 = [&random01]()
+    {
+        const float x = random01();
+        const float y = random01();
+        const float z = random01();
+        return vec3(x, y, z);
+    };
+
+    const vec3 boundsExtent = worldBounds.max_ - worldBounds.min_;
+    const float sceneScale = glm::max(glm::length(boundsExtent), 1.0f);
+    const float characteristicDistance = 0.04f * sceneScale;
+    for (uint32_t i = 0; i < kPunctualLightCount; i++)
+    {
+        vec3 color = vec3(0.35f) + 0.65f * randomVec3();
+        color /= glm::max(color.r, glm::max(color.g, color.b));
+
+        lights[i].color = color;
+        lights[i].intensity = glm::mix(0.25f, 1.0f, random01()) * characteristicDistance * characteristicDistance;
+        lights[i].radius = glm::mix(0.0015f, 0.004f, random01()) * sceneScale;
+        lights[i].position = worldBounds.min_ + randomVec3() * boundsExtent;
+    }
+
+    punctualLightBuffer = ctx->createBuffer({
+        .usage = lvk::BufferUsageBits_Storage,
+        .storage = lvk::StorageType_Device,
+        .size = sizeof(PunctualLightBufferHeader) + kPunctualLightCount * sizeof(PunctualLightBufferStruct),
+        .debugName = "Buffer: Punctual Lights",
+    });
+    const PunctualLightBufferHeader header = {.count = uint32_t(lights.size())};
+    ctx->upload(punctualLightBuffer, &header, sizeof(header), 0);
+    ctx->upload(punctualLightBuffer, lights.data(), sizeof(PunctualLightBufferStruct) * lights.size(),
+                sizeof(PunctualLightBufferHeader));
+    pc.punctualLightBuffer = ctx->gpuAddress(punctualLightBuffer);
 }
-void PrimaryRayPass::execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
-                                           const FrameTargets &targets, const RayTracingScene &rt, const Skybox &skyBox,
-                                           const mat4 &view, const mat4 &proj, lvk::SamplerHandle samplerClamp)
+
+void PrimaryRayPass::execute(lvk::ICommandBuffer &buf, const FrameTargets &targets, const mat4 &view, const mat4 &proj,
+                             const LightFrame &lightFrame, lvk::SamplerHandle samplerClamp)
 {
-    //const lvk::Framebuffer framebufferMain = {
-    //    .color = {{.texture = targets.lightingColor}},
-    //};
     buf.cmdPushDebugGroupLabel("Lighting", 0xffff00ff);
-    pc.invViewProj = glm::inverse(proj * view);
+    pc.clipToWorld = glm::inverse(proj * view);
+    pc.lightDir = vec4(lightFrame.dir, lightFrame.enabled ? 1.0f : 0.0f);
+    pc.cameraPos = glm::inverse(view)[3];
     pc.sceneColor = targets.sceneColor.index();
+    pc.lightingColor = targets.lightingColor.index();
     pc.gbuffer1 = targets.gbufferRT1.index();
     pc.gbuffer2 = targets.gbufferRT2.index();
     pc.gbuffer3 = targets.gbufferRT3.index();
-    pc.gbuffer4 = targets.gbufferRT4.index();
     pc.depth = targets.opaqueDepth.index();
-    pc.texSkyboxIrradiance = skyBox.texSkyboxIrradiance.index();
     pc.sampler = samplerClamp.index();
-    pc.bufferLight = ctx->gpuAddress(lightBuffer);
+    pc.frameIndex = frameIndex++;
+    pc.texBlueNoise = blueNoise.index();
     buf.cmdBindComputePipeline(pipeline);
     buf.cmdPushConstants(pc);
-    // buf.cmdBindDepthState({});
-    buf.cmdDispatchThreadGroups(targets.sizeFb.divide2D(16), {.textures =
-                                                                  {
-                                                                      lvk::TextureHandle(targets.sceneColor),
-                                                                      lvk::TextureHandle(targets.gbufferRT1),
-                                                                      lvk::TextureHandle(targets.gbufferRT2),
-                                                                      lvk::TextureHandle(targets.gbufferRT3),
-                                                                      lvk::TextureHandle(targets.gbufferRT4),
-                                                                      lvk::TextureHandle(targets.opaqueDepth),
-                                                                      lvk::TextureHandle(skyBox.texSkyboxIrradiance),
-                                                                  },
-                                                              .buffers = {lvk::BufferHandle(lightBuffer)}});
+    buf.cmdDispatchThreadGroups(targets.sizeFb.divide2DRoundUp(16),
+                                {.textures =
+                                     {
+                                         lvk::TextureHandle(targets.sceneColor),
+                                         lvk::TextureHandle(targets.lightingColor),
+                                         lvk::TextureHandle(targets.gbufferRT1),
+                                         lvk::TextureHandle(targets.gbufferRT2),
+                                         lvk::TextureHandle(targets.gbufferRT3),
+                                         lvk::TextureHandle(targets.opaqueDepth),
+                                         lvk::TextureHandle(blueNoise),
+                                     },
+                                 .buffers = {lvk::BufferHandle(punctualLightBuffer)}});
     buf.cmdPopDebugGroupLabel();
 }
 
@@ -403,8 +441,7 @@ void renderGbufferPass(const std::unique_ptr<lvk::IContext> &ctx, VulkanApp &app
         .color = {{.texture = targets.sceneColor},
                   {.texture = targets.gbufferRT1},
                   {.texture = targets.gbufferRT2},
-                  {.texture = targets.gbufferRT3},
-                  {.texture = targets.gbufferRT4}},
+                  {.texture = targets.gbufferRT3}},
         .depthStencil = {.texture = targets.opaqueDepth},
     };
     buf.cmdBeginRendering(

@@ -1,11 +1,11 @@
 #pragma once
 
-#include "RayTracing.h"
 #include "SceneResources.h"
 
 #include "scene/Skybox.h"
 
 #include <array>
+#include <cstddef>
 
 namespace FinalDemo
 {
@@ -32,17 +32,19 @@ struct MeshPushConstants
 
 struct PrimaryRayPassPushConstants
 {
-    mat4 invViewProj;
+    mat4 clipToWorld;
+    vec4 lightDir;
+    vec4 cameraPos;
     uint32_t sceneColor;
+    uint32_t lightingColor;
     uint32_t gbuffer1;
     uint32_t gbuffer2;
     uint32_t gbuffer3;
-    uint32_t gbuffer4;
     uint32_t depth;
-    uint32_t texSkyboxIrradiance;
-    uint32_t texRTShadowAO;
     uint32_t sampler;
-    uint64_t bufferLight;
+    uint32_t frameIndex;
+    uint32_t texBlueNoise;
+    uint64_t punctualLightBuffer;
 };
 
 struct HDRPushConstants
@@ -85,18 +87,41 @@ struct RenderPipelines
     RenderPipelines(const std::unique_ptr<lvk::IContext> &ctx, const MeshData &meshData, lvk::Format depthFormat);
 };
 
+struct PunctualLightBufferStruct
+{
+    glm::vec3 color;
+    float intensity;
+    glm::vec3 position;
+    float radius;
+};
+
+struct alignas(16) PunctualLightBufferHeader
+{
+    uint32_t count;
+    uint32_t padding[3] = {};
+};
+
+static_assert(sizeof(PunctualLightBufferStruct) == 32);
+static_assert(offsetof(PunctualLightBufferStruct, intensity) == 12);
+static_assert(offsetof(PunctualLightBufferStruct, position) == 16);
+static_assert(offsetof(PunctualLightBufferStruct, radius) == 28);
+static_assert(sizeof(PunctualLightBufferHeader) == 16);
+
 struct PrimaryRayPass
 {
-    PrimaryRayPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets,
-                   lvk::SamplerHandle samplerClamp, lvk::Format swapchainFormat);
-    void execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf, const FrameTargets &targets,
-                 const RayTracingScene &rt, const Skybox &skyBox, const mat4 &view, const mat4 &proj,
-                 lvk::SamplerHandle samplerClamp);
+    PrimaryRayPass(const std::unique_ptr<lvk::IContext> &ctx, const BoundingBox &worldBounds);
+    void execute(lvk::ICommandBuffer &buf, const FrameTargets &targets, const mat4 &view, const mat4 &proj,
+                 const LightFrame &lightFrame, lvk::SamplerHandle samplerClamp);
+
+    static constexpr uint32_t kPunctualLightCount = 64u;
+    std::vector<PunctualLightBufferStruct> lights;
+    lvk::Holder<lvk::BufferHandle> punctualLightBuffer;
+    lvk::Holder<lvk::TextureHandle> blueNoise;
 
     lvk::Holder<lvk::ShaderModuleHandle> shader;
     lvk::Holder<lvk::ComputePipelineHandle> pipeline;
-    lvk::Holder<lvk::BufferHandle> lightBuffer;
     PrimaryRayPassPushConstants pc;
+    uint32_t frameIndex = 0;
 };
 
 struct HDRPass

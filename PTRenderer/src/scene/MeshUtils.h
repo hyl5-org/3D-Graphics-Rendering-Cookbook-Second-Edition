@@ -54,7 +54,7 @@ inline GLTFMaterialDataGPU convertToGPUMaterial(const std::unique_ptr<lvk::ICont
 {
     GLTFMaterialDataGPU result = {
         .baseColorFactor = mat.baseColorFactor,
-        .metallicRoughnessNormalOcclusion = vec4(mat.metallicFactor, mat.roughness, 1.0f, 1.0f),
+        .metallicRoughnessNormalOcclusion = vec4(mat.metallicFactor, mat.roughness, 0.0f, 0.0f),
         .clearcoatTransmissionThickness = vec4(1.0f, 1.0f, mat.transparencyFactor, 1.0f),
         .emissiveFactorAlphaCutoff = vec4(vec3(mat.emissiveFactor), mat.alphaTest),
     };
@@ -81,6 +81,7 @@ inline GLTFMaterialDataGPU convertToGPUMaterial(const std::unique_ptr<lvk::ICont
     result.emissiveTexture = getTextureFromCache(mat.emissiveTexture);
     result.normalTexture = getTextureFromCache(mat.normalTexture);
     result.transmissionTexture = getTextureFromCache(mat.opacityTexture);
+    result.surfacePropertiesTexture = getTextureFromCache(mat.metallicRoughnessTexture);
 
     return result;
 }
@@ -191,6 +192,12 @@ inline Material convertAIMaterial(const aiMaterial *M, std::vector<std::string> 
         {
             D.normalTexture = addUnique(files, path.C_Str());
         }
+    }
+
+    if (aiGetMaterialTexture(M, aiTextureType_METALNESS, 0, &path, &mapping, &uvIndex, &blend, &textureOp,
+                             textureMapMode, &textureFlags) == AI_SUCCESS)
+    {
+        D.metallicRoughnessTexture = addUnique(files, path.C_Str());
     }
 
     if (aiGetMaterialTexture(M, aiTextureType_OPACITY, 0, &path, &mapping, &uvIndex, &blend, &textureOp, textureMapMode,

@@ -103,6 +103,11 @@ inline RayTracingScene createRayTracingScene(const std::unique_ptr<lvk::IContext
         }
 
         const Mesh &mesh = meshData.meshes[meshIndex];
+        const Material &material = meshData.materials[mesh.materialID];
+        if ((material.flags & sMaterialFlags_Transparent) != 0)
+        {
+            continue;
+        }
         const uint32_t lod = std::min(0u, mesh.lodCount - 1);
         const uint32_t indexCount = mesh.getLODIndicesCount(lod);
         if (indexCount < 3 || (indexCount % 3) != 0 || mesh.vertexCount == 0)

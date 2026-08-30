@@ -1,0 +1,166 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_ray_query : require
+#extension GL_EXT_ray_flags_primitive_culling : require
+
+#define PTR_PRIMARY_RAY_COMPUTE 1
+#include <PTRenderer/src/common.sp>
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 0) uniform texture2D kTextures2D[];
+layout(set = 0, binding = 1) uniform sampler kSamplers[];
+layout(set = 0, binding = 2, r11f_g11f_b10f) uniform writeonly image2D kTextures2DOut[];
+layout(set = 0, binding = 4) uniform accelerationStructureEXT kTLAS[];
+
+layout(push_constant) uniform PushConstants
+{
+    mat4 clipToWorld;
+    vec4 lightDir;
+    vec4 cameraPos;
+    uint sceneColor;
+    uint lightingColor;
+    uint gbuffer1;
+    uint gbuffer2;
+    uint gbuffer3;
+    uint depth;
+    uint smpl;
+    uint frameIndex;
+    uint texBlueNoise;
+    PunctualLightBuffer punctualLights;
+}
+pc;
+
+const float kRayOriginOffset = 0.03;
+const float kRayMin = 0.001;
+const float kRayMax = 1e4;
+
+vec4 sampleTexture2D(uint textureId, vec2 uv)
+{
+    return textureLod(nonuniformEXT(sampler2D(kTextures2D[textureId], kSamplers[pc.smpl])), uv, 0.0);
+}
+
+bool traceShadow(vec3 origin, vec3 direction, float maxDistance)
+{
+    rayQueryEXT query;
+    rayQueryInitializeEXT(query, kTLAS[0],
+                          gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipAABBEXT, 0xff,
+                          origin, kRayMin, direction, maxDistance);
+    while (rayQueryProceedEXT(query)) {}
+    return rayQueryGetIntersectionTypeEXT(query, true) != gl_RayQueryCommittedIntersectionNoneEXT;
+}
+
+void main()
+{
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outputSize = imageSize(kTextures2DOut[pc.lightingColor]);
+    if (any(greaterThanEqual(pixel, outputSize)))
+    {
+        return;
+    }
+
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(outputSize);
+    vec3 scene = sampleTexture2D(pc.sceneColor, uv).rgb;
+    float depth = sampleTexture2D(pc.depth, uv).r;
+    if (depth >= 1.0)
+    {
+        imageStore(kTextures2DOut[pc.lightingColor], pixel, vec4(max(scene, vec3(0.0)), 1.0));
+        return;
+    }
+
+    vec4 g1 = sampleTexture2D(pc.gbuffer1, uv);
+    vec4 g2 = sampleTexture2D(pc.gbuffer2, uv);
+    vec4 g3 = sampleTexture2D(pc.gbuffer3, uv);
+
+    vec3 n = decodeOctahedron(g1.xy);
+    float metallic = clamp(g2.x, 0.0, 1.0);
+    float roughness = clamp(g2.z, 0.045, 1.0);
+    vec3 baseColor = clamp(g3.rgb, 0.0, 1.0);
+
+    vec3 worldPos = clipToWorld(pc.clipToWorld, uv, depth);
+    vec3 v = normalize(pc.cameraPos.xyz - worldPos);
+    float nDotView = dot(n, v);
+    if (nDotView <= 0.0)
+    {
+        imageStore(kTextures2DOut[pc.lightingColor], pixel, vec4(max(scene, vec3(0.0)), 1.0));
+        return;
+    }
+
+    vec3 f0 = mix(vec3(0.04), baseColor, metallic);
+    vec3 color = scene;
+
+    // if (pc.lightDir.w > 0.0)
+    // {
+    //     vec3 lightDirection = -normalize(pc.lightDir.xyz);
+    //     float nDotLight = max(dot(n, lightDirection), 0.0);
+    //     if (nDotLight > 0.0 &&
+    //         !traceShadow(worldPos + n * kRayOriginOffset, lightDirection, kRayMax))
+    //     {
+    //         color += evaluateBRDF(n, v, lightDirection, baseColor, metallic, roughness, f0) * nDotLight;
+    //     }
+    // }
+    uint punctualLightCount = pc.punctualLights.count;
+
+    // uniform random sampling
+
+    if (punctualLightCount > 0u)
+    {
+        uvec3 randomSeed = uvec3(uvec2(pixel), pc.frameIndex);
+        uint punctualLightIndex = min(uint(rand(randomSeed) * float(punctualLightCount)), punctualLightCount - 1u);
+        PunctualLight light = pc.punctualLights.lights[punctualLightIndex];
+        vec3 toLight = light.position - worldPos;
+        float distanceSquared = max(dot(toLight, toLight), 1e-6);
+        float distanceToLight = sqrt(distanceSquared);
+        vec3 lightDirection = toLight / distanceToLight;
+        float nDotLight = max(dot(n, lightDirection), 0.0);
+        if (nDotLight > 0.0)
+        {
+            vec3 shadowOrigin = worldPos + n * kRayOriginOffset;
+            vec3 shadowToLight = light.position - shadowOrigin;
+            float shadowDistance = length(shadowToLight);
+            bool shadowed = shadowDistance > kRayMin &&
+                            traceShadow(shadowOrigin, shadowToLight / shadowDistance,
+                                        max(shadowDistance - kRayMin, kRayMin));
+            if (!shadowed)
+            {
+                float radiusSquared = max(light.radius * light.radius, 1e-6);
+                // divide pdf
+                vec3 radiance = light.color * light.intensity /
+                                max(distanceSquared, radiusSquared) * float(punctualLightCount);
+                color += evaluateBRDF(n, v, lightDirection, baseColor, metallic, roughness, f0) *
+                         nDotLight * radiance;
+            }
+        }
+    }
+
+    // 
+    // for (uint i = 0u; i < punctualLightCount; ++i)
+    // {
+    //     PunctualLight light = pc.punctualLights.lights[i];
+    //     vec3 toLight = light.position - worldPos;
+    //     float distanceSquared = max(dot(toLight, toLight), 1e-6);
+    //     float distanceToLight = sqrt(distanceSquared);
+    //     vec3 lightDirection = toLight / distanceToLight;
+    //     float nDotLight = max(dot(n, lightDirection), 0.0);
+    //     if (nDotLight > 0.0)
+    //     {
+    //         vec3 shadowOrigin = worldPos + n * kRayOriginOffset;
+    //         vec3 shadowToLight = light.position - shadowOrigin;
+    //         float shadowDistance = length(shadowToLight);
+    //         bool shadowed = shadowDistance > kRayMin &&
+    //                         traceShadow(shadowOrigin, shadowToLight / shadowDistance,
+    //                                     max(shadowDistance - kRayMin, kRayMin));
+    //         if (!shadowed)
+    //         {
+    //             float radiusSquared = max(light.radius * light.radius, 1e-6);
+    //             vec3 radiance = light.color * light.intensity /
+    //                             max(distanceSquared, radiusSquared);
+    //             color += evaluateBRDF(n, v, lightDirection, baseColor, metallic, roughness, f0) *
+    //                      nDotLight * radiance;
+    //         }
+    //     }
+    // }
+    imageStore(kTextures2DOut[pc.lightingColor], pixel, vec4(max(color, vec3(0.0)), 1.0));
+}

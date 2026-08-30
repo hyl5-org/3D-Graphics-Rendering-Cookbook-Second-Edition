@@ -90,7 +90,7 @@ GLTFMaterialDataGPU convertToGPUMaterialLazy(const std::unique_ptr<lvk::IContext
 
     GLTFMaterialDataGPU result = {
         .baseColorFactor = mat.baseColorFactor,
-        .metallicRoughnessNormalOcclusion = vec4(mat.metallicFactor, mat.roughness, 1.0f, 1.0f),
+        .metallicRoughnessNormalOcclusion = vec4(mat.metallicFactor, mat.roughness, 0.0f, 0.0f),
         .clearcoatTransmissionThickness = vec4(1.0f, 1.0f, mat.transparencyFactor, 1.0f),
         .emissiveFactorAlphaCutoff = vec4(vec3(mat.emissiveFactor), mat.alphaTest),
     };
@@ -130,6 +130,7 @@ GLTFMaterialDataGPU convertToGPUMaterialLazy(const std::unique_ptr<lvk::IContext
     startLoadingTexture(mat.emissiveTexture);
     startLoadingTexture(mat.normalTexture);
     startLoadingTexture(mat.opacityTexture);
+    startLoadingTexture(mat.metallicRoughnessTexture);
 
     return result;
 }
@@ -220,6 +221,7 @@ class VKMesh11Lazy final : public VKMesh11
                 m.emissiveTexture = getTextureFromCache(mtl.emissiveTexture);
                 m.normalTexture = getTextureFromCache(mtl.normalTexture);
                 m.transmissionTexture = getTextureFromCache(mtl.opacityTexture);
+                m.surfacePropertiesTexture = getTextureFromCache(mtl.metallicRoughnessTexture);
 
                 if (memcmp(&m, &materialsGPU_[i], sizeof(m)))
                 {

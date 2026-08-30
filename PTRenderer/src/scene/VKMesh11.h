@@ -145,9 +145,9 @@ class VkPipelineDeferred : public VKPipeline
     {
         positionOnly_ = positionOnly;
         vert_ =
-            vert.valid() ? std::move(vert) : loadShaderModule(ctx, "PTRenderer/src/gbuffer_opaque.vert");
+            vert.valid() ? std::move(vert) : loadShaderModule(ctx, "PTRenderer/shaders/gbuffer_opaque.vert");
         frag_ =
-            frag.valid() ? std::move(frag) : loadShaderModule(ctx, "PTRenderer/src/gbuffer_opaque.frag");
+            frag.valid() ? std::move(frag) : loadShaderModule(ctx, "PTRenderer/shaders/gbuffer_opaque.frag");
         lvk::ColorAttachment attachments[8] = {};
         attachments[0].format = lvk::Format::Format_R11G11B10_F;
         attachments[1].format = lvk::Format::Format_A2B10G10R10_UN;

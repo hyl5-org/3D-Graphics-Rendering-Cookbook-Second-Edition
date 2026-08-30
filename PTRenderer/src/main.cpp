@@ -38,7 +38,7 @@ VULKAN_APP_MAIN
 
     // Geometry
     RenderPipelines pipelines(ctx, loadedScene.meshData, app.getDepthFormat());
-    PrimaryRayPass primary(ctx, targets, samplerClamp, ctx -> getSwapchainFormat());
+    PrimaryRayPass primary(ctx, loadedScene.worldBounds);
 
     HDRPass hdr(ctx, targets, samplerClamp, ctx->getSwapchainFormat());
     const Skybox skyBox(ctx, "data/immenstadter_horn_2k_prefilter.ktx", "data/immenstadter_horn_2k_irradiance.ktx",
@@ -79,9 +79,8 @@ VULKAN_APP_MAIN
                                   canvas3d, view, proj, lightFrame);
                 LVK_PROFILER_ZONE_END();
 
-                lvk::TextureHandle currentColor;
                 LVK_PROFILER_ZONE("Primary pass", LVK_PROFILER_COLOR_CMD_DRAW);
-                primary.execute(ctx, buf, targets, mesh.rayTracing_, skyBox, view, proj, samplerClamp);
+                primary.execute(buf, targets, view, proj, lightFrame, samplerClamp);
                 LVK_PROFILER_ZONE_END();
 
                 LVK_PROFILER_ZONE("Skybox pass", LVK_PROFILER_COLOR_CMD_DRAW);
@@ -89,7 +88,7 @@ VULKAN_APP_MAIN
                 LVK_PROFILER_ZONE_END();
 
                 LVK_PROFILER_ZONE("Post process", LVK_PROFILER_COLOR_CMD_DISPATCH);
-                hdr.execute(buf, currentColor, deltaSeconds, samplerClamp);
+                hdr.execute(buf, targets.lightingColor, deltaSeconds, samplerClamp);
                 LVK_PROFILER_ZONE_END();
 
                 lvk::TextureHandle swapchainTexture;

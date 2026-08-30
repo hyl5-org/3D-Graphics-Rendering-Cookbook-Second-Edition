@@ -55,38 +55,27 @@ void main()
         }
     }
 
-    // PBR-ish GBuffer path kept for later:
-    // float metallic = mat.metallicRoughnessNormalOcclusion.x;
-    // float roughness = mat.metallicRoughnessNormalOcclusion.y;
-    // if (mat.metallicRoughnessTexture > 0) {
-    //   vec4 mr = textureBindless2D(mat.metallicRoughnessTexture, mat.metallicRoughnessTextureSampler, uv);
-    //   roughness *= mr.g;
-    //   metallic *= mr.b;
-    // }
-    // roughness = clamp(roughness, 0.04, 1.0);
-    // metallic = clamp(metallic, 0.0, 1.0);
+    float metallic = mat.metallicRoughnessNormalOcclusion.x;
+    float roughness = mat.metallicRoughnessNormalOcclusion.y;
+    if (mat.metallicRoughnessTexture > 0)
+    {
+        vec4 mr = textureBindless2D(mat.metallicRoughnessTexture, mat.metallicRoughnessTextureSampler, vec2(uv));
+        roughness *= mr.g;
+        metallic *= mr.b;
+    }
+    metallic = clamp(metallic, 0.0, 1.0);
 
-    // float ao = 1.0;
-    // if (mat.occlusionTexture > 0) {
-    //   float occlusion = textureBindless2D(mat.occlusionTexture, mat.occlusionTextureSampler, uv).r;
-    //   ao = mix(1.0, occlusion, mat.metallicRoughnessNormalOcclusion.w);
-    // }
-
-    vec3 emissive = vec3(0.0);
+    vec3 emissive = mat.emissiveFactorAlphaCutoff.rgb;
     if (mat.emissiveTexture > 0)
     {
-        emissive = mat.emissiveFactorAlphaCutoff.rgb *
-                   textureBindless2D(mat.emissiveTexture, mat.emissiveTextureSampler, vec2(uv)).rgb;
+        emissive *= textureBindless2D(mat.emissiveTexture, mat.emissiveTextureSampler, vec2(uv)).rgb;
     }
 
     const float specular = 0.5;
-    const float metallic = 0.0;
-    const float roughness = 1.0;
-    const float ao = 1.0;
     const float shadingModelId = 0.0;
-
-    outSceneColor = vec4(emissive, 1.0);
+    // TODO(): recover emissive
+    outSceneColor = vec4(0.0, 0.0, 0.0, 1.0);
     outGBuffer1 = vec4(encodeOctahedron(n), 0.0, 0.0);
     outGBuffer2 = vec4(metallic, specular, roughness, shadingModelId);
-    outGBuffer3 = vec4(baseColor.rgb, ao);
+    outGBuffer3 = vec4(baseColor.rgb, 1.0);
 }

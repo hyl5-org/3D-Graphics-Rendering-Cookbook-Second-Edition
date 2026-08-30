@@ -91,6 +91,7 @@ struct LightParams
 {
     float theta = +90.0f;
     float phi = -26.0f;
+    bool enabled = true;
 
     bool operator==(const LightParams &) const = default;
 };
@@ -109,8 +110,8 @@ struct FrameTargets
     lvk::Holder<lvk::TextureHandle> sceneColor;    // R11G11B10F scene color
     lvk::Holder<lvk::TextureHandle> lightingColor; // R11G11B10F deferred lighting output
     lvk::Holder<lvk::TextureHandle> gbufferRT1; // A2B10G10R10_UNORM octahedron encoding world normal : xy | unused : zw
-    lvk::Holder<lvk::TextureHandle> gbufferRT2; // RGBA8_UNORMmetallic, specular, roughness, shadingmodelid
-    lvk::Holder<lvk::TextureHandle> gbufferRT3; // RGBA8_UNORM basecolor : xyz | ao : w
+    lvk::Holder<lvk::TextureHandle> gbufferRT2; // RGBA8_UNORM metallic, reserved, roughness, shading model id
+    lvk::Holder<lvk::TextureHandle> gbufferRT3; // RGBA8_UNORM basecolor : xyz | unused : w
     lvk::Holder<lvk::TextureHandle> gbufferRT4; // RG16F motion vector : xy
 
     lvk::Holder<lvk::TextureHandle> opaqueDepth; // D24S8
@@ -121,6 +122,7 @@ struct LightFrame
     vec3 dir;
     mat4 view;
     mat4 proj;
+    bool enabled = true;
 };
 
 extern DemoSettings gSettings;
