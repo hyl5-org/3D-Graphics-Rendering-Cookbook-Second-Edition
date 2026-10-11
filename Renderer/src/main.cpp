@@ -4,8 +4,58 @@
 #include "scene/VKMesh11Lazy.h"
 
 #include <algorithm>
+#include <chrono>
+#include <lvk/vulkan/VulkanClasses.h>
 
 using namespace FinalDemo;
+
+// Run before acquiring the frame command buffer. LVK defers native compilation
+// until getVkPipeline(); createRenderPipeline() alone only allocates a handle.
+static double recompilePsos(lvk::IContext &ctx, lvk::RenderPipelineDesc desc, uint32_t &compiled,
+                           uint32_t count = 30000)
+{
+    auto &vk = static_cast<lvk::VulkanContext &>(ctx);
+    compiled = 0;
+    const auto start = std::chrono::steady_clock::now();
+    LVK_PROFILER_ZONE("PSO Recompile", LVK_PROFILER_COLOR_CMD_DRAW);
+    const lvk::BlendFactor factors[] = {lvk::BlendFactor_One, lvk::BlendFactor_SrcColor,
+                                       lvk::BlendFactor_OneMinusSrcColor, lvk::BlendFactor_DstColor,
+                                       lvk::BlendFactor_OneMinusDstColor};
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        // 30 VS x 40 PS x (5 source blend factors x 5 destination factors) = 30000.
+        const uint32_t vs = i % 30, ps = (i / 30) % 40, state = (i / 1200) % 25;
+        const float constants[] = {1.0f + float(ps + 1) / 32.0f, 1.0f + float(vs + 1) / 32.0f};
+        desc.specInfo = {.entries = {{.constantId = 0, .size = sizeof(float)},
+                                     {.constantId = 1, .offset = sizeof(float), .size = sizeof(float)}},
+                         .data = constants, .dataSize = sizeof(constants)};
+        desc.color[0].blendEnabled = true;
+        desc.color[0].srcRGBBlendFactor = factors[state % 5];
+        desc.color[0].dstRGBBlendFactor = factors[state / 5];
+        LVK_PROFILER_ZONE("PSO Create", LVK_PROFILER_COLOR_CMD_DRAW);
+        auto pipeline = ctx.createRenderPipeline(desc);
+        if (!pipeline.valid() || vk.getVkPipeline(pipeline, 0) == VK_NULL_HANDLE)
+        {
+            break;
+        }
+        ++compiled;
+        pipeline.reset();
+        LVK_PROFILER_ZONE_END();
+        // Submit/retire deferred destruction in batches instead of retaining 30k PSOs.
+        if (compiled % 256 == 0)
+        {
+            LVK_PROFILER_ZONE("PSO Batch Cleanup", LVK_PROFILER_COLOR_WAIT);
+            ctx.wait(ctx.submit(ctx.acquireCommandBuffer()));
+            LVK_PROFILER_ZONE_END();
+        }
+    }
+    LVK_PROFILER_ZONE("PSO Final Cleanup", LVK_PROFILER_COLOR_WAIT);
+    ctx.wait(ctx.submit(ctx.acquireCommandBuffer()));
+    ctx.wait(ctx.submit(ctx.acquireCommandBuffer())); // Drain the last batch after its fence has completed.
+    LVK_PROFILER_ZONE_END();
+    LVK_PROFILER_ZONE_END();
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+}
 
 VULKAN_APP_MAIN
 {
@@ -54,10 +104,23 @@ VULKAN_APP_MAIN
     SceneDrawLists drawLists(ctx, loadedScene.meshData, mesh);
     SceneCulling culling(ctx, loadedScene, mesh);
 
+    bool recompileRequested = false;
+    uint32_t compiledPsos = 0;
+    double psoCompileMs = 0;
+
     app.run(
         [&](uint32_t width, uint32_t height, float aspectRatio, float deltaSeconds)
         {
             LVK_PROFILER_FUNCTION();
+
+            if (recompileRequested)
+            {
+                recompileRequested = false;
+                psoCompileMs = recompilePsos(*ctx, {.smVert = hdr.vertToneMap,
+                                                   .smFrag = hdr.fragToneMap,
+                                                   .color = {{.format = ctx->getSwapchainFormat()}},
+                                                   .debugName = "PSO benchmark"}, compiledPsos);
+            }
 
             const mat4 view = app.camera_.getViewMatrix();
             const mat4 proj = glm::perspective(45.0f, aspectRatio, 0.01f, 200.0f);
@@ -150,6 +213,13 @@ VULKAN_APP_MAIN
                 app.drawFPS();
                 app.drawMemo();
                 drawControls(width, height, aspectRatio, culling, shadows, ssao, hdr, app);
+                ImGui::Begin("PSO benchmark");
+                recompileRequested = ImGui::Button("Recompile 30000 PSOs (blocks)");
+                ImGui::TextUnformatted("30 VS x 40 PS x 25 blend states = 30000");
+                ImGui::Text("Compiled: %u / 30000", compiledPsos);
+                ImGui::Text("Total CPU time: %.3f ms (%.2f s)", psoCompileMs, psoCompileMs / 1000.0);
+                ImGui::TextUnformatted("Includes creation + cleanup; driver cache retained.");
+                ImGui::End();
 #if defined(ANDROID)
                 const float screenWidth = ImGui::GetIO().DisplaySize.x;
                 const float screenHeight = ImGui::GetIO().DisplaySize.y;

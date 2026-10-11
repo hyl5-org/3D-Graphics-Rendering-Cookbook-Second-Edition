@@ -2,6 +2,9 @@
 layout(location = 0) in vec2 uv;
 layout(location = 0) out vec4 out_FragColor;
 
+// Distinct, observable PSO specializations; the normal renderer keeps gain = 1.
+layout(constant_id = 0) const float psoGain = 1.0;
+
 const int ToneMappingMode_None = 0;
 const int ToneMappingMode_Reinhard = 1;
 const int ToneMappingMode_Uchimura = 2;
@@ -123,5 +126,5 @@ void main()
         color = PBRNeutralToneMapping(pc.exposure * color, pc.startCompression, pc.desaturation);
     }
 
-    out_FragColor = vec4(color + pc.bloomStrength * bloom, 1.0);
+    out_FragColor = vec4((color + pc.bloomStrength * bloom) * psoGain, 1.0);
 }
