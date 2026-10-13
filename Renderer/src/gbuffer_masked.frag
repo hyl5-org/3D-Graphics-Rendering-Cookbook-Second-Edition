@@ -7,8 +7,8 @@
 #include <data/shaders/AlphaTest.sp>
 #include <data/shaders/UtilsPBR.sp>
 
-layout(location = 0) in f16vec2 uv;
-layout(location = 1) in f16vec3 normal;
+layout(location = 0) in vec2 uv;
+layout(location = 1) in vec3 normal;
 layout(location = 2) in vec3 worldPos;
 layout(location = 3) in flat uint materialId;
 

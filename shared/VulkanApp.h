@@ -80,6 +80,7 @@ struct VulkanAppConfig
     vec3 initialCameraPos = vec3(0.0f, 0.0f, -2.5f);
     vec3 initialCameraTarget = vec3(0.0f, 0.0f, 0.0f);
     bool showGLTFInspector = false;
+    bool enableGPUAVRayTracing = true;
 };
 
 class VulkanApp

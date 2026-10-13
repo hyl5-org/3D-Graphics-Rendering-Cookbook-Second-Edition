@@ -52,6 +52,47 @@ bool traceShadow(vec3 origin, vec3 direction, float maxDistance)
     return rayQueryGetIntersectionTypeEXT(query, true) != gl_RayQueryCommittedIntersectionNoneEXT;
 }
 
+float hat_p_X_i(PunctualLight light, vec3 n, vec3 v, vec3 baseColor, float metallic, float roughness, vec3 f0)
+{
+    return light.intensity / (4.0 * 3.14159265359 * light.radius * light.radius) * nDotLight * evaluateBRDF(n, v, lightDirection, baseColor, metallic, roughness, f0);
+}
+
+void initialSampling()
+{
+    uint M = 8;
+    float S = 0.0;
+    float w[8];
+    uint lightIndex[8];
+    for (uint i = 0u; i < M; ++i)
+    {
+        uint punctualLightCount = pc.punctualLights.count;
+        uvec3 randomSeed = uvec3(uvec2(gl_GlobalInvocationID.xy), pc.frameIndex + i);
+        uint punctualLightIndex = min(uint(rand(randomSeed) * float(punctualLightCount)), punctualLightCount - 1u);
+        PunctualLight light = pc.punctualLights.lights[punctualLightIndex];
+        // wi = 1 / M * \hat{p(X_i)} / p(X_i)
+        float p_X_i = 1.0 / float(punctualLightCount); // uniform sampling
+        float hat_p_X_i = hat_p_X_i(light, n, v, baseColor, metallic, roughness, f0); // target function, ignore shadow ray
+        float wi = 1.0 / float(M) * hat_p_X_i / p_X_i;
+        S += wi;
+        w[i] = wi;
+        lightIndex[i] = punctualLightIndex;
+    }
+    // normalize weights
+    uint idx_Y = 0;
+    for (uint i = 0u; i < M; ++i)
+    {
+        w[i] /= S;
+        if (rand(uvec3(uvec2(gl_GlobalInvocationID.xy), pc.frameIndex + i)) < w[i])
+        {
+            idx_Y = i;
+        }
+    }
+    uint N = rand(uvec3(uvec2(gl_GlobalInvocationID.xy), pc.frameIndex + 100u)) * float(M);
+    PunctualLight light_Y = pc.punctualLights.lights[lightIndex[idx_Y]];
+    float hat_p_X_Y = hat_p_X_i(light_Y, n, v, baseColor, metallic, roughness, f0);
+    float W_Y = S / hat_p_X_Y;
+
+}
 void main()
 {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
@@ -135,6 +176,8 @@ void main()
         }
     }
 
+    initialSampling();
+    resample();
     // 
     // for (uint i = 0u; i < punctualLightCount; ++i)
     // {

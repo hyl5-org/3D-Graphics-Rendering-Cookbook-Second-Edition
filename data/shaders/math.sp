@@ -8,7 +8,8 @@ float pow2(float x)
 mat3 getTangentBasis(vec3 tangentZ)
 {
 	const float sign_ = tangentZ.z >= 0 ? 1 : -1;
-	const float a = -1.0 / sqrt(sign_ + tangentZ.z);
+	// Duff et al.: the signed denominator must not be square-rooted.
+	const float a = -1.0 / (sign_ + tangentZ.z);
 	const float b = tangentZ.x * tangentZ.y * a;
 
 	vec3 tangentX = vec3(1 + sign_ * a * pow2(tangentZ.x), sign_ * b, -sign_ * tangentZ.x);

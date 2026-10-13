@@ -6,6 +6,8 @@
 
 #include "Utils.h"
 
+#include <lvk/vulkan/VulkanClasses.h>
+
 #include <ktx-software/lib/src/gl_format.h>
 #include <ktx.h>
 #include <stb/stb_image.h>
@@ -104,6 +106,16 @@ lvk::ShaderStage lvkShaderStageFromFileName(const char *fileName)
         return lvk::Stage_Tese;
     }
 
+    if (endsWith(fileName, ".task"))
+    {
+        return lvk::Stage_Task;
+    }
+
+    if (endsWith(fileName, ".mesh"))
+    {
+        return lvk::Stage_Mesh;
+    }
+
     return lvk::Stage_Vert;
 }
 
@@ -130,6 +142,28 @@ lvk::Holder<lvk::ShaderModuleHandle> loadShaderModule(const std::unique_ptr<lvk:
     debugGLSLSourceCode[handle.index()] = code;
 
     return handle;
+}
+
+VkShaderEXT loadShader(const std::unique_ptr<lvk::IContext> &ctx, const char *fileName,
+                      const lvk::SpecializationConstantDesc &specInfo, lvk::Result *outResult)
+{
+    if (!ctx || !fileName || !*fileName)
+    {
+        lvk::Result::setResult(outResult, lvk::Result::Code::ArgumentOutOfRange, "Missing context or shader file name");
+        return VK_NULL_HANDLE;
+    }
+
+    const std::string code = readShaderFile(fileName);
+    if (code.empty())
+    {
+        lvk::Result::setResult(outResult, lvk::Result::Code::RuntimeError, "Cannot read shader source or shader source is empty");
+        return VK_NULL_HANDLE;
+    }
+
+    const std::string debugName = std::string("Shader Object: ") + fileName;
+    lvk::ShaderDesc desc(code.c_str(), lvkShaderStageFromFileName(fileName), debugName.c_str());
+    desc.specInfo = specInfo;
+    return static_cast<lvk::VulkanContext &>(*ctx).createShader(desc, outResult);
 }
 
 lvk::Holder<lvk::TextureHandle> loadTexture(const std::unique_ptr<lvk::IContext> &ctx, const char *fileName,

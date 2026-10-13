@@ -21,6 +21,9 @@ std::string readShaderFile(const char *fileName);
 lvk::ShaderStage lvkShaderStageFromFileName(const char *fileName);
 
 lvk::Holder<lvk::ShaderModuleHandle> loadShaderModule(const std::unique_ptr<lvk::IContext> &ctx, const char *fileName);
+// Returns a context-owned shader object. Release early with VulkanContext::destroyShader().
+VkShaderEXT loadShader(const std::unique_ptr<lvk::IContext> &ctx, const char *fileName,
+                      const lvk::SpecializationConstantDesc &specInfo = {}, lvk::Result *outResult = nullptr);
 lvk::Holder<lvk::TextureHandle> loadTexture(const std::unique_ptr<lvk::IContext> &ctx, const char *fileName,
                                             lvk::TextureType textureType = lvk::TextureType_2D, bool sRGB = false);
 

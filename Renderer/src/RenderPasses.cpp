@@ -5,20 +5,14 @@
 namespace FinalDemo
 {
 
-RenderPipelines::RenderPipelines(const std::unique_ptr<lvk::IContext> &ctx, const MeshData &meshData,
-                                 lvk::Format depthFormat, lvk::Format shadowMapFormat)
-    : opaque(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
-             loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.vert"),
-             loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.frag")),
-      masked(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
-             loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.vert"),
-             loadShaderModule(ctx, "Renderer/src/gbuffer_masked.frag")),
-      transparent(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
-                  loadShaderModule(ctx, "Renderer/src/main.vert"),
-                  loadShaderModule(ctx, "Renderer/src/transparent.frag")),
-      shadow(ctx, meshData.positionOnlyStreams, lvk::Format_Invalid, shadowMapFormat, 1,
-             loadShaderModule(ctx, "Renderer/shaders/shadow.vert"),
-             loadShaderModule(ctx, "Renderer/shaders/shadow.frag"), true)
+RenderShaders::RenderShaders(const std::unique_ptr<lvk::IContext>& ctx)
+    : gbufferVert(ctx, "Renderer/src/gbuffer_opaque.vert"),
+      opaqueFrag(ctx, "Renderer/src/gbuffer_opaque.frag"),
+      maskedFrag(ctx, "Renderer/src/gbuffer_masked.frag"),
+      transparentVert(ctx, "Renderer/src/main.vert"),
+      transparentFrag(ctx, "Renderer/src/transparent.frag"),
+      shadowVert(ctx, "Renderer/shaders/shadow.vert"),
+      shadowFrag(ctx, "Renderer/shaders/shadow.frag")
 {
 }
 
@@ -49,7 +43,7 @@ ShadowPass::ShadowPass(const std::unique_ptr<lvk::IContext> &ctx)
     });
 }
 
-void ShadowPass::updateIfNeeded(lvk::ICommandBuffer &buf, const VKMesh11 &mesh, const RenderPipelines &pipelines,
+void ShadowPass::updateIfNeeded(lvk::ICommandBuffer &buf, const VKMesh11 &mesh, const RenderShaders &shaders,
                                 const LightFrame &lightFrame)
 {
     const bool useRTShadow = mesh.rayTracing_.valid() && gSettings.rayTracing.shadows;
@@ -61,7 +55,7 @@ void ShadowPass::updateIfNeeded(lvk::ICommandBuffer &buf, const VKMesh11 &mesh, 
         buf.cmdPushDebugGroupLabel("Shadow map", 0xff0000ff);
         buf.cmdSetDepthBias(gSettings.light.depthBiasConst, gSettings.light.depthBiasSlope);
         buf.cmdSetDepthBiasEnable(true);
-        mesh.draw(buf, pipelines.shadow, lightFrame.view, lightFrame.proj);
+        mesh.draw(buf, shaders.shadowVert, shaders.shadowFrag, lightFrame.view, lightFrame.proj);
         buf.cmdSetDepthBiasEnable(false);
         buf.cmdPopDebugGroupLabel();
         buf.cmdEndRendering();
@@ -135,7 +129,7 @@ RTShadowAOPass::RTShadowAOPass(const std::unique_ptr<lvk::IContext> &ctx, const 
         .debugName = "RT Prev Depth",
     });
 
-    // Denoise pipelines
+    // Denoise shaders
     compTemporal = loadShaderModule(ctx, "Renderer/shaders/rt_denoise_temporal.comp");
     pipelineTemporal =
         ctx->createComputePipeline({.smComp = compTemporal, .debugName = "Pipeline: RT Denoise Temporal"});
@@ -795,7 +789,7 @@ void HDRPass::swapAdaptedLuminance()
 
 void renderGbufferPass(const std::unique_ptr<lvk::IContext> &ctx, VulkanApp &app, lvk::ICommandBuffer &buf,
                        const FrameTargets &targets, const LoadedScene &loadedScene, const Skybox &skyBox,
-                       const VKMesh11 &mesh, const RenderPipelines &pipelines, SceneDrawLists &drawLists,
+                       const VKMesh11 &mesh, const RenderShaders &shaders, SceneDrawLists &drawLists,
                        const OITPass &oit, const ShadowPass &shadows, LineCanvas3D &canvas3d, const mat4 &view,
                        const mat4 &proj, const LightFrame &lightFrame)
 
@@ -841,14 +835,14 @@ void renderGbufferPass(const std::unique_ptr<lvk::IContext> &ctx, VulkanApp &app
         buf.cmdPushDebugGroupLabel("Mesh opaque", 0xff0000ff);
         MeshPushConstants pcOpaque = pc;
         pcOpaque.bufferDrawData = ctx->gpuAddress(drawLists.opaque.bufferDrawData_);
-        mesh.draw(buf, pipelines.opaque, &pcOpaque, sizeof(pcOpaque),
+        mesh.draw(buf, shaders.gbufferVert, shaders.opaqueFrag, &pcOpaque, sizeof(pcOpaque),
                   {.compareOp = lvk::CompareOp_Less, .isDepthWriteEnabled = true}, &drawLists.opaque);
         buf.cmdPopDebugGroupLabel();
 
         buf.cmdPushDebugGroupLabel("Mesh alpha masked", 0xff0000ff);
         MeshPushConstants pcMasked = pc;
         pcMasked.bufferDrawData = ctx->gpuAddress(drawLists.masked.bufferDrawData_);
-        mesh.draw(buf, pipelines.masked, &pcMasked, sizeof(pcMasked),
+        mesh.draw(buf, shaders.gbufferVert, shaders.maskedFrag, &pcMasked, sizeof(pcMasked),
                   {.compareOp = lvk::CompareOp_Less, .isDepthWriteEnabled = true}, &drawLists.masked);
         buf.cmdPopDebugGroupLabel();
     }
@@ -874,7 +868,7 @@ void renderSkyboxPass(lvk::ICommandBuffer &buf, const FrameTargets &targets, con
 
 void renderTransparentPass(const std::unique_ptr<lvk::IContext> &ctx, VulkanApp &app, lvk::ICommandBuffer &buf,
                            const FrameTargets &targets, const Skybox &skyBox, const VKMesh11 &mesh,
-                           const RenderPipelines &pipelines, SceneDrawLists &drawLists, const OITPass &oit,
+                           const RenderShaders &shaders, SceneDrawLists &drawLists, const OITPass &oit,
                            const ShadowPass &shadows, const mat4 &view, const mat4 &proj)
 {
     if (!gSettings.draw.meshesTransparent)
@@ -919,7 +913,7 @@ void renderTransparentPass(const std::unique_ptr<lvk::IContext> &ctx, VulkanApp 
         .texSkybox = skyBox.texSkybox.index(),
         .texSkyboxIrradiance = skyBox.texSkyboxIrradiance.index(),
     };
-    mesh.draw(buf, pipelines.transparent, &pc, sizeof(pc),
+    mesh.draw(buf, shaders.transparentVert, shaders.transparentFrag, &pc, sizeof(pc),
               {.compareOp = lvk::CompareOp_Less, .isDepthWriteEnabled = false}, &drawLists.transparent);
     buf.cmdEndRendering();
     buf.cmdPopDebugGroupLabel();

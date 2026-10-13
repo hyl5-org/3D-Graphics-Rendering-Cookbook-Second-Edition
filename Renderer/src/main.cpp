@@ -62,6 +62,9 @@ VULKAN_APP_MAIN
     const VulkanAppConfig appConfig{
         .initialCameraPos = vec3(-18.621f, 4.621f, -6.359f),
         .initialCameraTarget = vec3(0, +5.0f, 0),
+        // VVL 1.4.357 + RTX 3080 (596.49): ray-query instrumentation loses the device
+        // on both GPL and shader-object paths. Keep core validation and other GPU-AV checks.
+        .enableGPUAVRayTracing = false,
     };
 
     VULKAN_APP_DECLARE(app, appConfig);
@@ -88,7 +91,7 @@ VULKAN_APP_MAIN
     CullingPipeline cullingPipeline(ctx);
 
     // Geometry
-    RenderPipelines pipelines(ctx, loadedScene.meshData, app.getDepthFormat(), ctx->getFormat(shadows.map));
+    RenderShaders shaders(ctx);
 
     SSAOPass ssao(ctx, targets, samplerClamp, ctx->getSwapchainFormat());
 
@@ -154,12 +157,12 @@ VULKAN_APP_MAIN
 
                 LVK_PROFILER_ZONE("Shadow and draw stats", 0xff8080ff);
                 buf.cmdPushDebugGroupLabel("Shadow", 0xff8080ff);
-                shadows.updateIfNeeded(buf, mesh, pipelines, lightFrame);
+                shadows.updateIfNeeded(buf, mesh, shaders, lightFrame);
                 buf.cmdPopDebugGroupLabel();
                 LVK_PROFILER_ZONE_END();
 
                 LVK_PROFILER_ZONE("Geometry pass", LVK_PROFILER_COLOR_CMD_DRAW);
-                renderGbufferPass(ctx, app, buf, targets, loadedScene, skyBox, mesh, pipelines, drawLists, oit, shadows,
+                renderGbufferPass(ctx, app, buf, targets, loadedScene, skyBox, mesh, shaders, drawLists, oit, shadows,
                                   canvas3d, view, proj, lightFrame);
                 LVK_PROFILER_ZONE_END();
                 lvk::TextureHandle rtTex;
@@ -184,7 +187,7 @@ VULKAN_APP_MAIN
                 if (useOIT)
                 {
                     LVK_PROFILER_ZONE("Transparent pass", LVK_PROFILER_COLOR_CMD_DRAW);
-                    renderTransparentPass(ctx, app, buf, targets, skyBox, mesh, pipelines, drawLists, oit, shadows,
+                    renderTransparentPass(ctx, app, buf, targets, skyBox, mesh, shaders, drawLists, oit, shadows,
                                           view, proj);
                     LVK_PROFILER_ZONE_END();
                 }

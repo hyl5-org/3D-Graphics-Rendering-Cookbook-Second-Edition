@@ -105,15 +105,17 @@ struct BlurPass
     lvk::TextureHandle texOut;
 };
 
-struct RenderPipelines
+struct RenderShaders
 {
-    VkPipelineDeferred opaque;
-    VkPipelineDeferred masked;
-    VKPipeline transparent;
-    VKPipeline shadow;
+    ShaderObject gbufferVert;
+    ShaderObject opaqueFrag;
+    ShaderObject maskedFrag;
+    ShaderObject transparentVert;
+    ShaderObject transparentFrag;
+    ShaderObject shadowVert;
+    ShaderObject shadowFrag;
 
-    RenderPipelines(const std::unique_ptr<lvk::IContext> &ctx, const MeshData &meshData, lvk::Format depthFormat,
-                    lvk::Format shadowMapFormat);
+    explicit RenderShaders(const std::unique_ptr<lvk::IContext>& ctx);
 };
 
 struct ShadowPass
@@ -126,7 +128,7 @@ struct ShadowPass
 
     explicit ShadowPass(const std::unique_ptr<lvk::IContext> &ctx);
 
-    void updateIfNeeded(lvk::ICommandBuffer &buf, const VKMesh11 &mesh, const RenderPipelines &pipelines,
+    void updateIfNeeded(lvk::ICommandBuffer &buf, const VKMesh11 &mesh, const RenderShaders &shaders,
                         const LightFrame &lightFrame);
 };
 
@@ -266,7 +268,7 @@ struct HDRPass
 
 void renderGbufferPass(const std::unique_ptr<lvk::IContext> &ctx, VulkanApp &app, lvk::ICommandBuffer &buf,
                        const FrameTargets &targets, const LoadedScene &loadedScene, const Skybox &skyBox,
-                       const VKMesh11 &mesh, const RenderPipelines &pipelines, SceneDrawLists &drawLists,
+                       const VKMesh11 &mesh, const RenderShaders &shaders, SceneDrawLists &drawLists,
                        const OITPass &oit, const ShadowPass &shadows, LineCanvas3D &canvas3d, const mat4 &view,
                        const mat4 &proj, const LightFrame &lightFrame);
 
@@ -275,6 +277,6 @@ void renderSkyboxPass(lvk::ICommandBuffer &buf, const FrameTargets &targets, con
 
 void renderTransparentPass(const std::unique_ptr<lvk::IContext> &ctx, VulkanApp &app, lvk::ICommandBuffer &buf,
                            const FrameTargets &targets, const Skybox &skyBox, const VKMesh11 &mesh,
-                           const RenderPipelines &pipelines, SceneDrawLists &drawLists, const OITPass &oit,
+                           const RenderShaders &shaders, SceneDrawLists &drawLists, const OITPass &oit,
                            const ShadowPass &shadows, const mat4 &view, const mat4 &proj);
 } // namespace FinalDemo

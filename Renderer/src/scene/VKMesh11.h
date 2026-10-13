@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../RayTracing.h"
+#include "ShaderObject.h"
 #include "scene/MeshUtils.h"
 
 #include <cstring>
@@ -176,6 +177,8 @@ class VKMesh11
           indirectBuffer_(ctx, meshData.getMeshFileHeader().meshCount, indirectBufferStorage),
           textureFiles_(meshData.textureFiles)
     {
+        vertexInput_ = meshData.streams;
+        positionInput_ = meshData.positionOnlyStreams;
         const MeshFileHeader header = meshData.getMeshFileHeader();
 
         const uint32_t *indices = meshData.indexData.data();
@@ -269,7 +272,7 @@ class VKMesh11
         rayTracing_ = FinalDemo::createRayTracingScene(ctx, meshData, scene, bufferPositions_, bufferIndices_);
     }
 
-    void draw(lvk::ICommandBuffer &buf, const VKPipeline &pipeline, const mat4 &view, const mat4 &proj,
+    void draw(lvk::ICommandBuffer &buf, const ShaderObject& vertex, const ShaderObject& fragment, const mat4 &view, const mat4 &proj,
               lvk::TextureHandle texSkyboxIrradiance = {}, const VKIndirectBuffer11 *indirectBuffer = nullptr) const
     {
         if (!indirectBuffer)
@@ -277,8 +280,13 @@ class VKMesh11
             indirectBuffer = &indirectBuffer_;
         }
         buf.cmdBindIndexBuffer(bufferIndices_, lvk::IndexFormat_UI32);
-        bindVertexBuffers(buf, pipeline);
-        buf.cmdBindRenderPipeline(pipeline.pipeline_);
+
+        buf.cmdBindShaderEXT(VK_SHADER_STAGE_VERTEX_BIT, vertex.get());
+        buf.cmdBindShaderEXT(VK_SHADER_STAGE_FRAGMENT_BIT, fragment.get());
+        buf.cmdSetShaderObjectDefaults();
+        buf.cmdSetVertexInput(positionInput_);
+        buf.cmdSetCullMode(lvk::CullMode_Back);
+        bindVertexBuffers(buf, true);
         buf.cmdBindDepthState({.compareOp = lvk::CompareOp_Less, .isDepthWriteEnabled = true});
         const struct
         {
@@ -286,12 +294,14 @@ class VKMesh11
             uint64_t bufferTransforms;
             uint64_t bufferDrawData;
             uint64_t bufferMaterials;
+            uint64_t bufferLight;
             uint32_t texSkyboxIrradiance;
         } pc = {
             .viewProj = proj * view,
             .bufferTransforms = ctx->gpuAddress(bufferTransforms_),
             .bufferDrawData = ctx->gpuAddress(bufferDrawData_),
             .bufferMaterials = ctx->gpuAddress(bufferMaterials_),
+            .bufferLight = 0,
             .texSkyboxIrradiance = texSkyboxIrradiance.index(),
         };
         static_assert(sizeof(pc) <= 128);
@@ -301,13 +311,19 @@ class VKMesh11
                                         sizeof(DrawIndexedIndirectCommand));
     }
 
-    void draw(lvk::ICommandBuffer &buf, const VKPipeline &pipeline, const void *pushConstants, size_t pcSize,
+    void draw(lvk::ICommandBuffer &buf, const ShaderObject& vertex, const ShaderObject& fragment, const void *pushConstants, size_t pcSize,
               const lvk::DepthState depthState = {.compareOp = lvk::CompareOp_Less, .isDepthWriteEnabled = true},
               const VKIndirectBuffer11 *indirectBuffer = nullptr) const
     {
         buf.cmdBindIndexBuffer(bufferIndices_, lvk::IndexFormat_UI32);
-        bindVertexBuffers(buf, pipeline);
-        buf.cmdBindRenderPipeline(pipeline.pipeline_);
+
+        buf.cmdBindShaderEXT(VK_SHADER_STAGE_VERTEX_BIT, vertex.get());
+        buf.cmdBindShaderEXT(VK_SHADER_STAGE_FRAGMENT_BIT, fragment.get());
+        buf.cmdSetShaderObjectDefaults();
+        buf.cmdSetVertexInput(vertexInput_);
+        buf.cmdSetCullMode(lvk::CullMode_Back);
+        bindVertexBuffers(buf, false);
+
         buf.cmdBindDepthState(depthState);
         buf.cmdPushConstants(pushConstants, pcSize);
         if (!indirectBuffer)
@@ -324,10 +340,24 @@ class VKMesh11
         return indirectBuffer_.getDrawIndexedIndirectCommandPtr();
     };
 
-    void bindVertexBuffers(lvk::ICommandBuffer &buf, const VKPipeline &pipeline) const
+    // bool bindShaders(lvk::ICommandBuffer& buf, const ShaderObject& vertex, const ShaderObject& fragment, bool positionOnly) const
+    // {
+    //     const VkShaderEXT vs = vertex.get();
+    //     const VkShaderEXT fs = fragment.get();
+    //     if (!vs || !fs) return false;
+    //     buf.cmdBindShaderEXT(VK_SHADER_STAGE_VERTEX_BIT, vs);
+    //     buf.cmdBindShaderEXT(VK_SHADER_STAGE_FRAGMENT_BIT, fs);
+    //     buf.cmdSetShaderObjectDefaults();
+    //     buf.cmdSetVertexInput(positionOnly ? positionInput_ : vertexInput_);
+    //     buf.cmdSetCullMode(lvk::CullMode_Back);
+    //     bindVertexBuffers(buf, positionOnly);
+    //     return true;
+    // }
+
+    void bindVertexBuffers(lvk::ICommandBuffer &buf, bool positionOnly = false) const
     {
         buf.cmdBindVertexBuffer(0, bufferPositions_);
-        if (!pipeline.positionOnly_)
+        if (!positionOnly)
         {
             buf.cmdBindVertexBuffer(1, bufferAttributes_);
         }
@@ -336,6 +366,8 @@ class VKMesh11
   public:
     const std::unique_ptr<lvk::IContext> &ctx;
 
+    lvk::VertexInput vertexInput_ = {};
+    lvk::VertexInput positionInput_ = {};
     uint32_t numIndices_ = 0;
     uint32_t numMeshes_ = 0;
 

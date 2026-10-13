@@ -11,8 +11,8 @@ layout(location = 1) in vec4 in_normal_packed;
 layout(location = 2) in uint in_tc_packed;
 // layout(location = 3) in vec4 in_tangent_packed;
 
-layout(location = 0) out f16vec2 uv;
-layout(location = 1) out f16vec3 normal;
+layout(location = 0) out vec2 uv;
+layout(location = 1) out vec3 normal;
 layout(location = 2) out vec3 worldPos;
 layout(location = 3) out flat uint materialId;
 
@@ -25,8 +25,8 @@ void main()
     vec4 world = model * vec4(in_pos, 1.0);
 
     gl_Position = pc.viewProj * world;
-    uv = f16vec2(in_tc.x, 1.0 - in_tc.y);
-    normal = f16vec3(normalize(mat3(model) * in_normal));
+    uv = vec2(in_tc.x, 1.0 - in_tc.y);
+    normal = normalize(mat3(model) * in_normal);
     worldPos = world.xyz / world.w;
     materialId = draw.materialId;
 }

@@ -274,8 +274,9 @@ VulkanApp::VulkanApp(const VulkanAppConfig &cfg) : cfg_(cfg)
     window_ = lvk::initWindow("Simple example", width, height);
     ctx_ = lvk::createVulkanContextWithSwapchain(window_, width, height,
                                                  {
-                                                     .enableValidation = false,
+                                                     .enableValidation = true,
                                                      .enableValidationBestPractices = false,
+                                                     .enableGPUAVRayTracing = cfg_.enableGPUAVRayTracing,
                                                  });
     // recommend to use vulkan configurator on windows
     depthTexture_ = ctx_->createTexture({
