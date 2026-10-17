@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../Shader.h"
+
 #include "../RayTracing.h"
 #include "scene/MeshUtils.h"
 
@@ -109,7 +111,7 @@ class VKPipeline
                lvk::Holder<lvk::ShaderModuleHandle> &&frag = {}, bool positionOnly = false)
         : positionOnly_(positionOnly)
     {
-        vert_ = vert.valid() ? std::move(vert) : loadShaderModule(ctx, "Renderer/src/main.vert");
+        vert_ = vert.valid() ? std::move(vert) : loadRendererShader(ctx, "main.vert.slang");
         LVK_ASSERT(frag.valid());
         frag_ = std::move(frag);
 
@@ -145,9 +147,9 @@ class VkPipelineDeferred : public VKPipeline
     {
         positionOnly_ = positionOnly;
         vert_ =
-            vert.valid() ? std::move(vert) : loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.vert");
+            vert.valid() ? std::move(vert) : loadRendererShader(ctx, "gbuffer_opaque.vert.slang");
         frag_ =
-            frag.valid() ? std::move(frag) : loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.frag");
+            frag.valid() ? std::move(frag) : loadRendererShader(ctx, "gbuffer_opaque.frag.slang");
         lvk::ColorAttachment attachments[8] = {};
         attachments[0].format = lvk::Format::Format_R11G11B10_F;
         attachments[1].format = lvk::Format::Format_A2B10G10R10_UN;

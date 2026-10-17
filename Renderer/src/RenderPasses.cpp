@@ -1,3 +1,4 @@
+#include "Shader.h"
 #include "RenderPasses.h"
 
 #include <algorithm>
@@ -8,17 +9,17 @@ namespace FinalDemo
 RenderPipelines::RenderPipelines(const std::unique_ptr<lvk::IContext> &ctx, const MeshData &meshData,
                                  lvk::Format depthFormat, lvk::Format shadowMapFormat)
     : opaque(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
-             loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.vert"),
-             loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.frag")),
+             loadRendererShader(ctx, "gbuffer_opaque.vert.slang"),
+             loadRendererShader(ctx, "gbuffer_opaque.frag.slang")),
       masked(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
-             loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.vert"),
-             loadShaderModule(ctx, "Renderer/src/gbuffer_masked.frag")),
+             loadRendererShader(ctx, "gbuffer_opaque.vert.slang"),
+             loadRendererShader(ctx, "gbuffer_masked.frag.slang")),
       transparent(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
-                  loadShaderModule(ctx, "Renderer/src/main.vert"),
-                  loadShaderModule(ctx, "Renderer/src/transparent.frag")),
+                  loadRendererShader(ctx, "main.vert.slang"),
+                  loadRendererShader(ctx, "transparent.frag.slang")),
       shadow(ctx, meshData.positionOnlyStreams, lvk::Format_Invalid, shadowMapFormat, 1,
-             loadShaderModule(ctx, "Renderer/shaders/shadow.vert"),
-             loadShaderModule(ctx, "Renderer/shaders/shadow.frag"), true)
+             loadRendererShader(ctx, "shadow.vert.slang"),
+             loadRendererShader(ctx, "shadow.frag.slang"), true)
 {
 }
 
@@ -94,8 +95,8 @@ RTShadowAOPass::RTShadowAOPass(const std::unique_ptr<lvk::IContext> &ctx, const 
                                lvk::Format swapchainFormat)
 {
     uint32_t rtDownsampleScale = 2;
-    vert = loadShaderModule(ctx, "data/shaders/QuadFlip.vert");
-    frag = loadShaderModule(ctx, "Renderer/shaders/rt_shadow_ao.frag");
+    vert = loadRendererShader(ctx, "QuadFlip.vert.slang");
+    frag = loadRendererShader(ctx, "rt_shadow_ao.frag.slang");
     pipeline = ctx->createRenderPipeline({
         .smVert = vert,
         .smFrag = frag,
@@ -136,11 +137,11 @@ RTShadowAOPass::RTShadowAOPass(const std::unique_ptr<lvk::IContext> &ctx, const 
     });
 
     // Denoise pipelines
-    compTemporal = loadShaderModule(ctx, "Renderer/shaders/rt_denoise_temporal.comp");
+    compTemporal = loadRendererShader(ctx, "rt_denoise_temporal.comp.slang");
     pipelineTemporal =
         ctx->createComputePipeline({.smComp = compTemporal, .debugName = "Pipeline: RT Denoise Temporal"});
 
-    compSpatial = loadShaderModule(ctx, "Renderer/shaders/rt_denoise_spatial.comp");
+    compSpatial = loadRendererShader(ctx, "rt_denoise_spatial.comp.slang");
     pipelineSpatialX = ctx->createComputePipeline({
         .smComp = compSpatial,
         .specInfo = {.entries = {{.constantId = 0, .size = sizeof(uint32_t)}},
@@ -156,7 +157,7 @@ RTShadowAOPass::RTShadowAOPass(const std::unique_ptr<lvk::IContext> &ctx, const 
         .debugName = "Pipeline: RT Denoise Spatial Y",
     });
 
-    compAtrous = loadShaderModule(ctx, "Renderer/shaders/rt_denoise_atrous.comp");
+    compAtrous = loadRendererShader(ctx, "rt_denoise_atrous.comp.slang");
     pipelineAtrousStep1 = ctx->createComputePipeline({
         .smComp = compAtrous,
         .specInfo = {.entries = {{.constantId = 0, .size = sizeof(uint32_t)}},
@@ -365,8 +366,8 @@ lvk::TextureHandle RTShadowAOPass::denoise(lvk::ICommandBuffer &buf, const Frame
 
 OITPass::OITPass(const std::unique_ptr<lvk::IContext> &ctx, const lvk::Dimensions &sizeFb)
 {
-    vert = loadShaderModule(ctx, "data/shaders/QuadFlip.vert");
-    frag = loadShaderModule(ctx, "Renderer/shaders/oit.frag");
+    vert = loadRendererShader(ctx, "QuadFlip.vert.slang");
+    frag = loadRendererShader(ctx, "oit.frag.slang");
     pipeline = ctx->createRenderPipeline({
         .smVert = vert,
         .smFrag = frag,
@@ -480,11 +481,11 @@ SSAOPass::SSAOPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets
         .debugName = "texBlur1",
     });
 
-    compSSAO = loadShaderModule(ctx, "Renderer/shaders/SSAO.comp");
+    compSSAO = loadRendererShader(ctx, "SSAO.comp.slang");
     pipelineSSAO = ctx->createComputePipeline({.smComp = compSSAO, .debugName = "Pipeline: SSAO"});
     rotations = loadTexture(ctx, "data/rot_texture.bmp");
 
-    compBlur = loadShaderModule(ctx, "data/shaders/Blur.comp");
+    compBlur = loadRendererShader(ctx, "Blur.comp.slang");
     pipelineBlurX = ctx->createComputePipeline({
         .smComp = compBlur,
         .specInfo = {.entries = {{.constantId = 0, .size = sizeof(uint32_t)}},
@@ -500,8 +501,8 @@ SSAOPass::SSAOPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets
         .debugName = "Pipeline: SSAO Blur Y",
     });
 
-    vertCombine = loadShaderModule(ctx, "data/shaders/QuadFlip.vert");
-    fragCombine = loadShaderModule(ctx, "Renderer/shaders/SSAO_combine.frag");
+    vertCombine = loadRendererShader(ctx, "QuadFlip.vert.slang");
+    fragCombine = loadRendererShader(ctx, "SSAO_combine.frag.slang");
     pipelineCombine = ctx->createRenderPipeline({
         .smVert = vertCombine,
         .smFrag = fragCombine,
@@ -532,8 +533,8 @@ SSAOPass::SSAOPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets
 LightingPass::LightingPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets,
                            lvk::SamplerHandle samplerClamp, lvk::Format swapchainFormat)
 {
-    vert = loadShaderModule(ctx, "data/shaders/QuadFlip.vert");
-    frag = loadShaderModule(ctx, "Renderer/shaders/lighting.frag");
+    vert = loadRendererShader(ctx, "QuadFlip.vert.slang");
+    frag = loadRendererShader(ctx, "lighting.frag.slang");
     pipeline = ctx->createRenderPipeline({
         .smVert = vert,
         .smFrag = frag,
@@ -641,13 +642,13 @@ HDRPass::HDRPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &
     adaptedLuminance[0] = ctx->createTexture(luminanceTextureDesc, "texAdaptedLuminance0");
     adaptedLuminance[1] = ctx->createTexture(luminanceTextureDesc, "texAdaptedLuminance1");
 
-    compBrightPass = loadShaderModule(ctx, "Renderer/shaders/BrightPass.comp");
+    compBrightPass = loadRendererShader(ctx, "BrightPass.comp.slang");
     pipelineBrightPass =
         ctx->createComputePipeline({.smComp = compBrightPass, .debugName = "Pipeline: HDR BrightPass"});
-    compAdaptationPass = loadShaderModule(ctx, "Renderer/shaders/Adaptation.comp");
+    compAdaptationPass = loadRendererShader(ctx, "Adaptation.comp.slang");
     pipelineAdaptationPass =
         ctx->createComputePipeline({.smComp = compAdaptationPass, .debugName = "Pipeline: HDR Adaptation"});
-    compBloomPass = loadShaderModule(ctx, "Renderer/shaders/Bloom.comp");
+    compBloomPass = loadRendererShader(ctx, "Bloom.comp.slang");
     pipelineBloomX = ctx->createComputePipeline({
         .smComp = compBloomPass,
         .specInfo = {.entries = {{.constantId = 0, .size = sizeof(uint32_t)}},
@@ -662,8 +663,8 @@ HDRPass::HDRPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &
                      .dataSize = sizeof(uint32_t)},
         .debugName = "Pipeline: HDR Bloom Y",
     });
-    vertToneMap = loadShaderModule(ctx, "data/shaders/QuadFlip.vert");
-    fragToneMap = loadShaderModule(ctx, "Renderer/shaders/ToneMap.frag");
+    vertToneMap = loadRendererShader(ctx, "QuadFlip.vert.slang");
+    fragToneMap = loadRendererShader(ctx, "ToneMap.frag.slang");
     pipelineToneMap = ctx->createRenderPipeline({
         .smVert = vertToneMap,
         .smFrag = fragToneMap,
