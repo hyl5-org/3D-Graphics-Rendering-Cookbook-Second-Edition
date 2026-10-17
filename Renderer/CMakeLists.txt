@@ -7,6 +7,8 @@ include(../CMake/CommonMacros.txt)
 set(APP_NAME Renderer)
 set(ANDROID_TEXTURE_CACHE_TOOL ${APP_NAME}_AndroidTextureCache)
 
+include(cmake/Slang.cmake)
+
 if(ANDROID)
   if(DEFINED ENV{ANDROID_NDK})
     cmake_path(SET NDK_PATH "$ENV{ANDROID_NDK}")
@@ -17,8 +19,8 @@ if(ANDROID)
   file(GLOB_RECURSE SRC_FILES LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} src/*.c??)
   file(GLOB_RECURSE HEADER_FILES LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} src/*.h)
   file(GLOB_RECURSE SHADER_FILES LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
-      src/*.vert src/*.frag src/*.geom src/*.sp src/*.comp src/*.tesc src/*.tese
-      shaders/*.vert shaders/*.frag shaders/*.geom shaders/*.sp shaders/*.comp shaders/*.tesc shaders/*.tese)
+      src/*.slang
+      shaders/*.slang)
 
   set(ANDROID_NATIVE_APP_GLUE_SRC "${CMAKE_CURRENT_BINARY_DIR}/android_native_app_glue.c")
   configure_file("${NDK_PATH}/sources/android/native_app_glue/android_native_app_glue.c"
@@ -31,7 +33,9 @@ if(ANDROID)
       "${ANDROID_NATIVE_APP_GLUE_SRC}")
   target_include_directories(lvk_android_native_${APP_NAME} PRIVATE
       src
+      "${RENDERER_SHADER_OUTPUT_DIR}"
       "${NDK_PATH}/sources/android/native_app_glue")
+  add_dependencies(lvk_android_native_${APP_NAME} RendererShaders)
   target_link_libraries(lvk_android_native_${APP_NAME} PRIVATE SharedUtils assimp meshoptimizer android log)
   set_target_properties(lvk_android_native_${APP_NAME} PROPERTIES
       DEBUG_POSTFIX ""
@@ -41,6 +45,8 @@ if(ANDROID)
   set_property(TARGET lvk_android_native_${APP_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
 else()
   SETUP_APP(${APP_NAME} "Chapter 11")
+  add_dependencies(${APP_NAME} RendererShaders)
+  target_include_directories(${APP_NAME} PRIVATE "${RENDERER_SHADER_OUTPUT_DIR}")
   target_link_libraries(${APP_NAME} PRIVATE SharedUtils assimp meshoptimizer)
   # TODO(luhanyang): Link OMM SDK once the runtime micromap backend is implemented.
   # if(COOKBOOK_WITH_RTX_OMM AND TARGET omm-lib)
@@ -48,7 +54,7 @@ else()
   #   target_compile_definitions(${APP_NAME} PRIVATE COOKBOOK_WITH_RTX_OMM=1)
   # endif()
   file(GLOB_RECURSE FINAL_DEMO_SHADER_FILES LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
-      shaders/*.vert shaders/*.frag shaders/*.geom shaders/*.sp shaders/*.comp shaders/*.tesc shaders/*.tese)
+      shaders/*.slang)
   target_sources(${APP_NAME} PRIVATE ${FINAL_DEMO_SHADER_FILES})
 
   if((DEFINED ENV{ANDROID_NDK}) OR (DEFINED ENV{NDK_ROOT}))
@@ -108,4 +114,10 @@ else()
       COMMENT "Generating Android ASTC Bistro texture cache")
   set_property(TARGET ${APP_NAME}_GenerateAndroidTextureCache PROPERTY FOLDER "tools")
 
+endif()
+
+if(ANDROID)
+  target_sources(lvk_android_native_${APP_NAME} PRIVATE ${RENDERER_SLANG_SOURCES})
+else()
+  target_sources(${APP_NAME} PRIVATE ${RENDERER_SLANG_SOURCES})
 endif()
