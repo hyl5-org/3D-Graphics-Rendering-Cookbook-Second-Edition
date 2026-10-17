@@ -1,3 +1,4 @@
+#include "Shader.h"
 #include "SceneResources.h"
 
 #include "scene/Bistro.h"
@@ -58,7 +59,7 @@ uint64_t SceneDrawLists::countTriangles(const std::vector<DrawIndexedIndirectCom
 
 CullingPipeline::CullingPipeline(const std::unique_ptr<lvk::IContext> &ctx)
 {
-    comp = loadShaderModule(ctx, "Renderer/shaders/FrustumCulling.comp");
+    comp = loadRendererShader(ctx, "FrustumCulling.comp.slang");
     pipeline = ctx->createComputePipeline({.smComp = comp});
 }
 

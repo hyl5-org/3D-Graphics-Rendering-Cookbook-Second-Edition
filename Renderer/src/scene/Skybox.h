@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../Shader.h"
+
 #include "../DemoConfig.h"
 
 class Skybox
@@ -12,8 +14,8 @@ class Skybox
         texSkybox = loadTexture(ctx, skyboxTexture, lvk::TextureType_Cube);
         texSkyboxIrradiance = loadTexture(ctx, skyboxIrradiance, lvk::TextureType_Cube);
 
-        vertSkybox = loadShaderModule(ctx, "Renderer/shaders/skybox.vert");
-        fragSkybox = loadShaderModule(ctx, "Renderer/shaders/skybox.frag");
+        vertSkybox = loadRendererShader(ctx, "skybox.vert.slang");
+        fragSkybox = loadRendererShader(ctx, "skybox.frag.slang");
         pipelineSkybox = ctx->createRenderPipeline({
             .smVert = vertSkybox,
             .smFrag = fragSkybox,

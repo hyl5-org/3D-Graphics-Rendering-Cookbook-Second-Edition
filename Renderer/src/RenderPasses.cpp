@@ -1,3 +1,4 @@
+#include "Shader.h"
 #include "RenderPasses.h"
 
 #include "shared/VulkanApp.h"
@@ -87,19 +88,19 @@ RenderPipelines::RenderPipelines(const std::unique_ptr<lvk::IContext> &ctx, cons
                                  lvk::Format depthFormat, lvk::Format shadowMapFormat,
                                  bool visibilityMaskEnabled, bool fragmentShadingRateEnabled)
     : opaque(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
-             loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.vert"),
-             loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.frag"), false, visibilityMaskEnabled,
+             loadRendererShader(ctx, "gbuffer_opaque.vert.slang"),
+             loadRendererShader(ctx, "gbuffer_opaque.frag.slang"), false, visibilityMaskEnabled,
              fragmentShadingRateEnabled),
       masked(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
-             loadShaderModule(ctx, "Renderer/src/gbuffer_opaque.vert"),
-             loadShaderModule(ctx, "Renderer/src/gbuffer_masked.frag"), false, visibilityMaskEnabled,
+             loadRendererShader(ctx, "gbuffer_opaque.vert.slang"),
+             loadRendererShader(ctx, "gbuffer_masked.frag.slang"), false, visibilityMaskEnabled,
              fragmentShadingRateEnabled),
       transparent(ctx, meshData.streams, kOffscreenFormat, depthFormat, kNumSamples,
-                  loadShaderModule(ctx, "Renderer/src/main.vert"),
-                  loadShaderModule(ctx, "Renderer/src/transparent.frag"), false, visibilityMaskEnabled),
+                  loadRendererShader(ctx, "main.vert.slang"),
+                  loadRendererShader(ctx, "transparent.frag.slang"), false, visibilityMaskEnabled),
       shadow(ctx, meshData.positionOnlyStreams, lvk::Format_Invalid, shadowMapFormat, 1,
-            loadShaderModule(ctx, "Renderer/shaders/shadow.vert"),
-            loadShaderModule(ctx, "Renderer/shaders/shadow.frag"), true)
+            loadRendererShader(ctx, "shadow.vert.slang"),
+            loadRendererShader(ctx, "shadow.frag.slang"), true)
 {
 }
 
@@ -158,8 +159,8 @@ VisibilityMaskPass::VisibilityMaskPass(const std::unique_ptr<lvk::IContext> &ctx
         return;
     }
 
-    vert = loadShaderModule(ctx, "Renderer/shaders/VisibilityMask.vert");
-    frag = loadShaderModule(ctx, "Renderer/shaders/VisibilityMask.frag");
+    vert = loadRendererShader(ctx, "VisibilityMask.vert.slang");
+    frag = loadRendererShader(ctx, "VisibilityMask.frag.slang");
     pipeline = ctx->createRenderPipeline({
         .smVert = vert,
         .smFrag = frag,
@@ -295,8 +296,8 @@ OITPass::OITPass(const std::unique_ptr<lvk::IContext> &ctx, const lvk::Dimension
                  lvk::Format depthStencilFormat, bool visibilityMaskEnabled)
     : visibilityMaskEnabled(visibilityMaskEnabled)
 {
-   vert = loadShaderModule(ctx, "data/shaders/QuadFlip.vert");
-   frag = loadShaderModule(ctx, "Renderer/shaders/oit.frag");
+   vert = loadRendererShader(ctx, "QuadFlip.vert.slang");
+   frag = loadRendererShader(ctx, "oit.frag.slang");
    pipeline = ctx->createRenderPipeline({
        .smVert = vert,
        .smFrag = frag,
@@ -411,8 +412,8 @@ LightingPass::LightingPass(const std::unique_ptr<lvk::IContext> &ctx, const Fram
                            const FixedFoveatedRendering &foveation)
     : fragmentShadingRate(foveation.attachment)
 {
-    vert = loadShaderModule(ctx, "data/shaders/QuadFlip.vert");
-    frag = loadShaderModule(ctx, "Renderer/shaders/lighting.frag");
+    vert = loadRendererShader(ctx, "QuadFlip.vert.slang");
+    frag = loadRendererShader(ctx, "lighting.frag.slang");
     pipeline = ctx->createRenderPipeline({
         .smVert = vert,
         .smFrag = frag,
@@ -531,13 +532,13 @@ HDRPass::HDRPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &
     adaptedLuminance[0] = ctx->createTexture(luminanceTextureDesc, "texAdaptedLuminance0");
     adaptedLuminance[1] = ctx->createTexture(luminanceTextureDesc, "texAdaptedLuminance1");
 
-    compBrightPass = loadShaderModule(ctx, "Renderer/shaders/BrightPass.comp");
+    compBrightPass = loadRendererShader(ctx, "BrightPass.comp.slang");
     pipelineBrightPass =
         ctx->createComputePipeline({.smComp = compBrightPass, .debugName = "Pipeline: HDR BrightPass"});
-    compAdaptationPass = loadShaderModule(ctx, "Renderer/shaders/Adaptation.comp");
+    compAdaptationPass = loadRendererShader(ctx, "Adaptation.comp.slang");
     pipelineAdaptationPass =
         ctx->createComputePipeline({.smComp = compAdaptationPass, .debugName = "Pipeline: HDR Adaptation"});
-    compBloomPass = loadShaderModule(ctx, "Renderer/shaders/Bloom.comp");
+    compBloomPass = loadRendererShader(ctx, "Bloom.comp.slang");
     pipelineBloomX = ctx->createComputePipeline({
         .smComp = compBloomPass,
         .specInfo = {.entries = {{.constantId = 0, .size = sizeof(uint32_t)}},
@@ -552,8 +553,8 @@ HDRPass::HDRPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &
                      .dataSize = sizeof(uint32_t)},
         .debugName = "Pipeline: HDR Bloom Y",
     });
-    vertToneMap = loadShaderModule(ctx, "data/shaders/QuadFlip.vert");
-    fragToneMap = loadShaderModule(ctx, "Renderer/shaders/ToneMap.frag");
+    vertToneMap = loadRendererShader(ctx, "QuadFlip.vert.slang");
+    fragToneMap = loadRendererShader(ctx, "ToneMap.frag.slang");
     pipelineToneMap = ctx->createRenderPipeline({
         .smVert = vertToneMap,
         .smFrag = fragToneMap,
