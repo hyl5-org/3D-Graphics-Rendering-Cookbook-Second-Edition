@@ -48,7 +48,7 @@ namespace FinalDemo
 {
 
 constexpr uint32_t kNumSamples = 1;
-constexpr lvk::Format kOffscreenFormat = lvk::Format_R11G11B10_F;
+constexpr lvk::Format kOffscreenFormat = lvk::Format_B10G11R11_UF;
 constexpr lvk::Format kHDRBloomFormat = lvk::Format_RGBA_F16;
 constexpr lvk::Dimensions kBloomSize = {512, 512};
 constexpr uint32_t kHorizontal = 1;

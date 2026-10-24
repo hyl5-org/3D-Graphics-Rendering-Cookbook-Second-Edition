@@ -152,7 +152,7 @@ void dispatchCullDrawListGPU(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICo
     pc.numMeshesToCull = numCommands;
     buf.cmdPushConstants(pc);
     buf.cmdUpdateBuffer(drawList.bufferIndirect_, numCommands);
-    buf.cmdDispatchThreadGroups({1 + numCommands / 64},
+    buf.cmdDispatch({1 + numCommands / 64},
                                 {.buffers = {lvk::BufferHandle(drawList.bufferIndirect_),
                                              lvk::BufferHandle(drawList.bufferDrawData_), cullingDataBuffer}});
 }
@@ -236,13 +236,13 @@ FrameTargets createGBufferTargets(const std::unique_ptr<lvk::IContext> &ctx, lvk
     return {
         .sizeFb = sizeFb,
         .sceneColor = ctx->createTexture({
-            .format = lvk::Format::Format_R11G11B10_F,
+            .format = lvk::Format::Format_B10G11R11_UF,
             .dimensions = sizeFb,
             .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
             .debugName = "gbuffer0",
         }),
         .lightingColor = ctx->createTexture({
-            .format = lvk::Format::Format_R11G11B10_F,
+            .format = lvk::Format::Format_B10G11R11_UF,
             .dimensions = sizeFb,
             .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
             .debugName = "lightingColor",

@@ -3,8 +3,12 @@
     "name": "lightweightvk",
     "source": {
         "type": "git",
-        "url": "https://github.com/hyl5-org/lightweightvk.git",
-        "revision": "3a32386d9b9cda8f30372b107ed34951e2b2d3a6"
+        "url": "https://github.com/corporateshark/lightweightvk.git",
+        "revision": "900adc4c57738061d9c25ae6711ae376296e5dd1"
+    },
+    "postprocess": {
+        "type": "script",
+        "file": "apply_lightweightvk.py"
     }
 },
 {

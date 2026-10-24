@@ -1,0 +1,639 @@
+diff --git a/lvk/LVK.cpp b/lvk/LVK.cpp
+index aecd6a2..6538916 100644
+--- a/lvk/LVK.cpp
++++ b/lvk/LVK.cpp
+@@ -50,16 +50,16 @@ void* createCocoaWindowView(void* window, void** outLayer);
+ namespace {
+ 
+ struct TextureFormatProperties {
+-  const lvk::Format format = lvk::Format_Invalid;
+-  const uint8_t bytesPerBlock : 5 = 1;
+-  const uint8_t blockWidth : 3 = 1;
+-  const uint8_t blockHeight : 3 = 1;
+-  const uint8_t minBlocksX : 2 = 1;
+-  const uint8_t minBlocksY : 2 = 1;
+-  const bool depth : 1 = false;
+-  const bool stencil : 1 = false;
+-  const bool compressed : 1 = false;
+-  const uint8_t numPlanes : 2 = 1;
++  const uint32_t format : 8 = lvk::Format_Invalid;
++  const uint32_t bytesPerBlock : 5 = 1;
++  const uint32_t blockWidth : 4 = 1;
++  const uint32_t blockHeight : 4 = 1;
++  const uint32_t minBlocksX : 2 = 1;
++  const uint32_t minBlocksY : 2 = 1;
++  const uint32_t depth : 1 = false;
++  const uint32_t stencil : 1 = false;
++  const uint32_t compressed : 1 = false;
++  const uint32_t numPlanes : 2 = 1;
+ };
+ 
+ // clang-format off
+@@ -135,6 +135,8 @@ static constexpr TextureFormatProperties properties[] = {
+     PROPS(ASTC_5x5_SRGBA, 16, .blockWidth = 5, .blockHeight = 5, .compressed = true),
+     PROPS(ASTC_6x6_RGBA, 16, .blockWidth = 6, .blockHeight = 6, .compressed = true),
+     PROPS(ASTC_6x6_SRGBA, 16, .blockWidth = 6, .blockHeight = 6, .compressed = true),
++    PROPS(ASTC_8x8_RGBA, 16, .blockWidth = 8, .blockHeight = 8, .compressed = true),
++    PROPS(ASTC_8x8_SRGBA, 16, .blockWidth = 8, .blockHeight = 8, .compressed = true),
+     PROPS(Z_UN16, 2, .depth = true),
+     PROPS(Z_UN24, 4, .depth = true), // implemented as `VK_FORMAT_D24_UNORM_S8_UINT`
+     PROPS(Z_F32, 4, .depth = true),
+@@ -335,6 +337,10 @@ void lvk::logShaderSource(const char* text) {
+ }
+ 
+ uint32_t lvk::VertexInput::getVertexSize() const {
++  if (inputBindings[0].stride) {
++    return inputBindings[0].stride;
++  }
++
+   uint32_t vertexSize = 0;
+   for (uint32_t i = 0; i < LVK_VERTEX_ATTRIBUTES_MAX && attributes[i].format != VertexFormat_Invalid; i++) {
+     LVK_ASSERT_MSG(attributes[i].offset == vertexSize, "Unsupported vertex attributes format");
+diff --git a/lvk/LVK.h b/lvk/LVK.h
+index becf68f..30e3315 100644
+--- a/lvk/LVK.h
++++ b/lvk/LVK.h
+@@ -105,6 +105,42 @@
+ 
+ #define LVK_ARRAY_NUM_ELEMENTS(x) (sizeof(x) / sizeof((x)[0]))
+ 
++#if !defined(LVK_DO_PRAGMA)
++#if defined(_MSC_VER)
++#define LVK_DO_PRAGMA(x) __pragma(x)
++#else
++#define LVK_DO_PRAGMA(x) _Pragma(#x)
++#endif
++#endif
++
++// Use around specific slow-to-debug functions in optimized builds, e.g.
++// PRAGMA_DISABLE_OPTIMIZATION
++// void someFunction() { ... }
++// PRAGMA_ENABLE_OPTIMIZATION
++#if defined(_MSC_VER)
++#define LVK_PRAGMA_DISABLE_OPTIMIZATION LVK_DO_PRAGMA(optimize("", off))
++#define LVK_PRAGMA_ENABLE_OPTIMIZATION LVK_DO_PRAGMA(optimize("", on))
++#elif defined(__clang__)
++#define LVK_PRAGMA_DISABLE_OPTIMIZATION LVK_DO_PRAGMA(clang optimize off)
++#define LVK_PRAGMA_ENABLE_OPTIMIZATION LVK_DO_PRAGMA(clang optimize on)
++#elif defined(__GNUC__)
++#define LVK_PRAGMA_DISABLE_OPTIMIZATION \
++  LVK_DO_PRAGMA(GCC push_options)       \
++  LVK_DO_PRAGMA(GCC optimize("O0"))
++#define LVK_PRAGMA_ENABLE_OPTIMIZATION LVK_DO_PRAGMA(GCC pop_options)
++#else
++#define LVK_PRAGMA_DISABLE_OPTIMIZATION
++#define LVK_PRAGMA_ENABLE_OPTIMIZATION
++#endif
++
++#if !defined(PRAGMA_DISABLE_OPTIMIZATION)
++#define PRAGMA_DISABLE_OPTIMIZATION LVK_PRAGMA_DISABLE_OPTIMIZATION
++#endif
++
++#if !defined(PRAGMA_ENABLE_OPTIMIZATION)
++#define PRAGMA_ENABLE_OPTIMIZATION LVK_PRAGMA_ENABLE_OPTIMIZATION
++#endif
++
+ namespace lvk {
+ 
+ class IContext;
+@@ -368,6 +404,9 @@ struct Dimensions {
+   inline Dimensions divide2D(uint32_t v) const {
+     return {.width = width / v, .height = height / v, .depth = depth};
+   }
++  inline Dimensions divide2DRoundUp(uint32_t v) const {
++    return {.width = (width + v - 1) / v, .height = (height + v - 1) / v, .depth = depth};
++  }
+   inline Dimensions divide3D(uint32_t v) const {
+     return {.width = width / v, .height = height / v, .depth = depth / v};
+   }
+@@ -544,6 +583,7 @@ enum VertexFormat : uint8_t {
+   VertexFormat_HalfFloat4,
+ 
+   VertexFormat_Int_2_10_10_10_REV,
++  VertexFormat_A2B10G10R10_SNorm = VertexFormat_Int_2_10_10_10_REV,
+ };
+ 
+ enum VertexInputRate : uint8_t {
+@@ -628,6 +668,8 @@ enum Format : uint8_t {
+   Format_ASTC_5x5_SRGBA, // requires `textureCompressionASTC_LDR`
+   Format_ASTC_6x6_RGBA, // requires `textureCompressionASTC_LDR`
+   Format_ASTC_6x6_SRGBA, // requires `textureCompressionASTC_LDR`
++  Format_ASTC_8x8_RGBA, // requires `textureCompressionASTC_LDR`
++  Format_ASTC_8x8_SRGBA, // requires `textureCompressionASTC_LDR`
+ 
+   Format_Z_UN16,
+   Format_Z_UN24,
+@@ -1369,6 +1411,11 @@ class IContext {
+ 
+   [[nodiscard]] virtual Holder<AccelStructHandle> createAccelerationStructure(const AccelStructDesc& desc, Result* outResult = nullptr) = 0;
+ 
++  virtual void createBLASBatch(const AccelStructDesc* descs,
++                               AccelStructHandle* outHandles,
++                               uint32_t count,
++                               Result* outResult = nullptr) = 0;
++
+   virtual void destroy(ComputePipelineHandle handle) = 0;
+   virtual void destroy(RenderPipelineHandle handle) = 0;
+   virtual void destroy(RayTracingPipelineHandle) = 0;
+@@ -1383,6 +1430,7 @@ class IContext {
+   [[nodiscard]] virtual uint64_t gpuAddress(AccelStructHandle handle) const = 0;
+ 
+ #pragma region Acceleration structure functions
++  [[nodiscard]] virtual uint64_t getAccelStructMemorySize(AccelStructHandle handle) const = 0;
+   [[nodiscard]] virtual AccelStructSizes getAccelStructSizes(const AccelStructDesc& desc, Result* outResult = nullptr) const = 0;
+ #pragma endregion
+ 
+@@ -1483,6 +1531,7 @@ struct ContextConfig {
+   VulkanVersion vulkanVersion = VulkanVersion_1_3;
+   bool terminateOnValidationError = false; // invoke std::terminate() on any validation error
+   bool enableValidation = true;
++  bool enableValidationBestPractices = false;
+   bool enableValidationGpuAV = true;
+   bool enableValidationSync = true;
+   bool generateSPIRVDebugInfo = true;
+diff --git a/lvk/vulkan/VulkanClasses.cpp b/lvk/vulkan/VulkanClasses.cpp
+index 20760a6..87e1ef6 100644
+--- a/lvk/vulkan/VulkanClasses.cpp
++++ b/lvk/vulkan/VulkanClasses.cpp
+@@ -2433,6 +2433,9 @@ void lvk::CommandBuffer::cmdTransitionToGeneral(const ldr::Span<TextureHandle>&
+   }
+ 
+   for (TextureHandle handle : textures) {
++    if (handle.empty()) {
++      continue;
++    }
+     LVK_ASSERT(!handle.empty());
+     lvk::VulkanImage& tex = *ctx_->texturesPool_.get(handle);
+ 
+@@ -2487,6 +2490,9 @@ void lvk::CommandBuffer::cmdTransitionToShaderReadOnly(const ldr::Span<TextureHa
+   }
+ 
+   for (TextureHandle handle : textures) {
++    if (handle.empty()) {
++      continue;
++    }
+     lvk::VulkanImage& img = *ctx_->texturesPool_.get(handle);
+ 
+     LVK_ASSERT(!img.isSwapchainImage_);
+@@ -5698,105 +5704,312 @@ lvk::Holder<lvk::TextureHandle> lvk::VulkanContext::createTextureView(lvk::Textu
+ }
+ 
+ lvk::AccelStructHandle lvk::VulkanContext::createBLAS(const AccelStructDesc& desc, Result* outResult) {
+-  VkAccelerationStructureGeometryKHR accelerationStructureGeometry{};
+-  VkAccelerationStructureTrianglesOpacityMicromapKHR opacityMicromap{};
+-  VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
+-  getBuildInfoBLAS(desc, accelerationStructureGeometry, opacityMicromap, accelerationStructureBuildSizesInfo);
++  lvk::AccelStructHandle handle;
++  createBLASBatch(&desc, &handle, 1, outResult);
++  return handle;
++}
+ 
+-  char debugNameBuffer[256] = {0};
+-  if (desc.debugName) {
+-    (void)snprintf(debugNameBuffer, sizeof(debugNameBuffer) - 1, "Buffer: %s", desc.debugName);
++void lvk::VulkanContext::createBLASBatch(const AccelStructDesc* descs, AccelStructHandle* outHandles, uint32_t count, Result* outResult) {
++  LVK_PROFILER_FUNCTION();
++
++  if (!count) {
++    Result::setResult(outResult, Result());
++    return;
+   }
+-  lvk::AccelerationStructure accelStruct = {
+-      .buildFlags = buildFlagsToVkBuildAccelerationStructureFlags(desc.buildFlags),
+-      .buildRangeInfo =
+-          {
+-              .primitiveCount = desc.buildRange.primitiveCount,
+-              .primitiveOffset = desc.buildRange.primitiveOffset,
+-              .firstVertex = desc.buildRange.firstVertex,
+-              .transformOffset = desc.buildRange.transformOffset,
+-          },
+-      .buffer = createBuffer(
+-          {
+-              .usage = lvk::BufferUsageBits_AccelStructStorage,
+-              .storage = lvk::StorageType_Device,
+-              .size = accelerationStructureBuildSizesInfo.accelerationStructureSize,
+-              .debugName = debugNameBuffer,
+-          },
+-          nullptr,
+-          outResult),
+-      .geometry = accelerationStructureGeometry,
+-      .opacityMicromap = opacityMicromap,
+-  };
+-  // must not point to the stack; cmdUpdateBLAS() re-links it
+-  accelStruct.geometry.geometry.triangles.pNext = nullptr;
+ 
+-  if (has_KHR_device_address_commands_) {
+-    // vkCreateAccelerationStructureKHR() is a legacy command when VK_KHR_device_address_commands is enabled
+-    const lvk::VulkanBuffer* buf = buffersPool_.get(accelStruct.buffer);
+-    const VkAccelerationStructureCreateInfo2KHR ciAccelerationStructure = {
+-        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_2_KHR,
+-        .addressRange = {.address = buf->vkDeviceAddress_, .size = accelerationStructureBuildSizesInfo.accelerationStructureSize},
+-        .addressFlags = buf->getVkAddressCommandFlags(),
+-        .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+-    };
+-    VK_ASSERT(vkCreateAccelerationStructure2KHR(vkDevice_, &ciAccelerationStructure, nullptr, &accelStruct.vkHandle));
+-  } else {
+-    const VkAccelerationStructureCreateInfoKHR ciAccelerationStructure = {
++  if (!LVK_VERIFY(has_KHR_acceleration_structure_)) {
++    Result::setResult(outResult, Result(Result::Code::RuntimeError, "VK_KHR_acceleration_structure is not enabled"));
++    return;
++  }
++
++  const auto createBlasHandle = [this](lvk::BufferHandle buffer, VkDeviceSize size, VkAccelerationStructureKHR* handle) {
++    const lvk::VulkanBuffer* storage = buffersPool_.get(buffer);
++    if (has_KHR_device_address_commands_) {
++      const VkAccelerationStructureCreateInfo2KHR info = {
++          .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_2_KHR,
++          .addressRange = {.address = storage->vkDeviceAddress_, .size = size},
++          .addressFlags = storage->getVkAddressCommandFlags(),
++          .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
++      };
++      return vkCreateAccelerationStructure2KHR(vkDevice_, &info, nullptr, handle);
++    }
++    const VkAccelerationStructureCreateInfoKHR info = {
+         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
+-        .buffer = getVkBuffer(this, accelStruct.buffer),
+-        .size = accelerationStructureBuildSizesInfo.accelerationStructureSize,
++        .buffer = storage->vkBuffer_,
++        .size = size,
+         .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+     };
+-    VK_ASSERT(vkCreateAccelerationStructureKHR(vkDevice_, &ciAccelerationStructure, nullptr, &accelStruct.vkHandle));
+-  }
++    return vkCreateAccelerationStructureKHR(vkDevice_, &info, nullptr, handle);
++  };
+ 
+-  if (!LVK_VERIFY(accelStruct.vkHandle)) {
+-    Result::setResult(outResult, Result::Code::RuntimeError, "Cannot create VkAccelerationStructureKHR");
+-    return {};
++  const uint32_t alignment = accelerationStructureProperties_.minAccelerationStructureScratchOffsetAlignment;
++
++  struct BLASBuildEntry {
++    VkAccelerationStructureGeometryKHR geometry = {};
++    VkAccelerationStructureTrianglesOpacityMicromapKHR opacityMicromap = {};
++    VkAccelerationStructureBuildSizesInfoKHR sizesInfo = {};
++    lvk::AccelerationStructure accelStruct = {};
++    bool allowCompaction = false;
++  };
++
++  std::vector<BLASBuildEntry> entries(count);
++  uint64_t maxScratchSize = 0;
++
++  for (uint32_t i = 0; i < count; i++) {
++    LVK_ASSERT(descs[i].type == AccelStructType_BLAS);
++    outHandles[i] = {};
++
++    getBuildInfoBLAS(descs[i], entries[i].geometry, entries[i].opacityMicromap, entries[i].sizesInfo);
++    entries[i].accelStruct.buildFlags = buildFlagsToVkBuildAccelerationStructureFlags(descs[i].buildFlags);
++    entries[i].accelStruct.geometry = entries[i].geometry;
++    entries[i].accelStruct.geometry.geometry.triangles.pNext = nullptr;
++    entries[i].accelStruct.opacityMicromap = entries[i].opacityMicromap;
++    entries[i].allowCompaction = (descs[i].buildFlags & AccelStructBuildFlagBits_AllowCompaction) != 0;
++
++    if (entries[i].sizesInfo.buildScratchSize > maxScratchSize) {
++      maxScratchSize = entries[i].sizesInfo.buildScratchSize;
++    }
++
++    char debugNameBuffer[256] = {0};
++    if (descs[i].debugName) {
++      snprintf(debugNameBuffer, sizeof(debugNameBuffer) - 1, "Buffer: %s", descs[i].debugName);
++    }
++    entries[i].accelStruct.buildRangeInfo = {
++        .primitiveCount = descs[i].buildRange.primitiveCount,
++        .primitiveOffset = descs[i].buildRange.primitiveOffset,
++        .firstVertex = descs[i].buildRange.firstVertex,
++        .transformOffset = descs[i].buildRange.transformOffset,
++    };
++    entries[i].accelStruct.buffer = createBuffer(
++        {
++            .usage = lvk::BufferUsageBits_AccelStructStorage,
++            .storage = lvk::StorageType_Device,
++            .size = entries[i].sizesInfo.accelerationStructureSize,
++            .debugName = debugNameBuffer,
++        },
++        nullptr,
++        outResult);
++
++    VK_ASSERT(
++        createBlasHandle(entries[i].accelStruct.buffer, entries[i].sizesInfo.accelerationStructureSize, &entries[i].accelStruct.vkHandle));
+   }
+ 
+   lvk::Holder<lvk::BufferHandle> scratchBuffer = createBuffer(
+       {
+           .usage = lvk::BufferUsageBits_Storage,
+           .storage = lvk::StorageType_Device,
+-          .size = std::max(accelerationStructureBuildSizesInfo.buildScratchSize,
+-                           accelerationStructureBuildSizesInfo.updateScratchSize),
+-          .debugName = "Buffer: BLAS scratch",
++          .size = maxScratchSize + alignment - 1,
++          .debugName = "Buffer: BLAS batch scratch",
+       },
+       nullptr,
+       outResult);
+ 
+-  const VkAccelerationStructureBuildGeometryInfoKHR accelerationBuildGeometryInfo{
+-      .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+-      .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+-      .flags = buildFlagsToVkBuildAccelerationStructureFlags(desc.buildFlags),
+-      .mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+-      .dstAccelerationStructure = accelStruct.vkHandle,
+-      .geometryCount = 1,
+-      .pGeometries = &accelerationStructureGeometry,
+-      .scratchData = {.deviceAddress = getAlignedAddress(gpuAddress(scratchBuffer),
+-                                                         accelerationStructureProperties_.minAccelerationStructureScratchOffsetAlignment)},
+-  };
++  const uint64_t scratchAddress = getAlignedAddress(gpuAddress(scratchBuffer), alignment);
+ 
+-  const VkAccelerationStructureBuildRangeInfoKHR* accelerationBuildStructureRangeInfos[] = {&accelStruct.buildRangeInfo};
++  // Build all BLAS in one command buffer
++  {
++    lvk::ICommandBuffer& cmdBuf = acquireCommandBuffer();
++    const VkCommandBuffer vkCmdBuf = lvk::getVkCommandBuffer(cmdBuf);
++
++    for (uint32_t i = 0; i < count; i++) {
++      if (i > 0) {
++        // Barrier between builds: scratch buffer WAW hazard
++        const VkMemoryBarrier2 barrier = {
++            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
++            .srcStageMask = VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
++            .srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR,
++            .dstStageMask = VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
++            .dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR,
++        };
++        const VkDependencyInfo depInfo = {
++            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
++            .memoryBarrierCount = 1,
++            .pMemoryBarriers = &barrier,
++        };
++        vkCmdPipelineBarrier2(vkCmdBuf, &depInfo);
++      }
+ 
+-  lvk::ICommandBuffer& buffer = acquireCommandBuffer();
+-  vkCmdBuildAccelerationStructuresKHR(
+-      lvk::getVkCommandBuffer(buffer), 1, &accelerationBuildGeometryInfo, accelerationBuildStructureRangeInfos);
+-  wait(submit(buffer, {}, {}));
++      const VkAccelerationStructureBuildGeometryInfoKHR buildInfo = {
++          .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
++          .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
++          .flags = buildFlagsToVkBuildAccelerationStructureFlags(descs[i].buildFlags),
++          .mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
++          .dstAccelerationStructure = entries[i].accelStruct.vkHandle,
++          .geometryCount = 1,
++          .pGeometries = &entries[i].geometry,
++          .scratchData = {.deviceAddress = scratchAddress},
++      };
+ 
+-  const VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{
+-      .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
+-      .accelerationStructure = accelStruct.vkHandle,
+-  };
+-  accelStruct.deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(vkDevice_, &accelerationDeviceAddressInfo);
++      const VkAccelerationStructureBuildRangeInfoKHR* rangeInfos[] = {&entries[i].accelStruct.buildRangeInfo};
++      vkCmdBuildAccelerationStructuresKHR(vkCmdBuf, 1, &buildInfo, rangeInfos);
++    }
+ 
+-  if (desc.buildFlags & lvk::AccelStructBuildFlagBits_AllowUpdate) {
+-    accelStruct.scratchBuffer = std::move(scratchBuffer);
++    const VkMemoryBarrier2 ready = {
++        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
++        .srcStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
++        .srcAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
++        .dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR |
++                        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
++        .dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
++    };
++    const VkDependencyInfo dependency = {
++        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
++        .memoryBarrierCount = 1,
++        .pMemoryBarriers = &ready,
++    };
++    vkCmdPipelineBarrier2(vkCmdBuf, &dependency);
++    wait(submit(cmdBuf, {}, {}));
+   }
+ 
+-  return accelStructuresPool_.create(std::move(accelStruct));
++  // Batch compaction
++  uint32_t numCompactable = 0;
++  for (uint32_t i = 0; i < count; i++) {
++    if (entries[i].allowCompaction) {
++      numCompactable++;
++    }
++  }
++
++  if (numCompactable > 0) {
++    VkQueryPool compactionQueryPool = VK_NULL_HANDLE;
++    const VkQueryPoolCreateInfo qpCI = {
++        .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
++        .queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR,
++        .queryCount = numCompactable,
++    };
++    VK_ASSERT(vkCreateQueryPool(vkDevice_, &qpCI, nullptr, &compactionQueryPool));
++
++    // Query compacted sizes
++    {
++      lvk::ICommandBuffer& cmdBuf = acquireCommandBuffer();
++      const VkCommandBuffer vkCmdBuf = lvk::getVkCommandBuffer(cmdBuf);
++      vkCmdResetQueryPool(vkCmdBuf, compactionQueryPool, 0, numCompactable);
++
++      uint32_t queryIndex = 0;
++      for (uint32_t i = 0; i < count; i++) {
++        if (entries[i].allowCompaction) {
++          vkCmdWriteAccelerationStructuresPropertiesKHR(vkCmdBuf,
++                                                        1,
++                                                        &entries[i].accelStruct.vkHandle,
++                                                        VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR,
++                                                        compactionQueryPool,
++                                                        queryIndex++);
++        }
++      }
++      wait(submit(cmdBuf, {}, {}));
++    }
++
++    std::vector<VkDeviceSize> compactedSizes(numCompactable);
++    VK_ASSERT(vkGetQueryPoolResults(vkDevice_,
++                                    compactionQueryPool,
++                                    0,
++                                    numCompactable,
++                                    sizeof(VkDeviceSize) * numCompactable,
++                                    compactedSizes.data(),
++                                    sizeof(VkDeviceSize),
++                                    VK_QUERY_RESULT_WAIT_BIT | VK_QUERY_RESULT_64_BIT));
++
++    // Compact eligible BLAS
++    {
++      std::vector<lvk::AccelerationStructure> pendingDestroy;
++      pendingDestroy.reserve(numCompactable);
++      lvk::ICommandBuffer& cmdBuf = acquireCommandBuffer();
++      const VkCommandBuffer vkCmdBuf = lvk::getVkCommandBuffer(cmdBuf);
++
++      uint32_t queryIndex = 0;
++      for (uint32_t i = 0; i < count; i++) {
++        if (!entries[i].allowCompaction) {
++          continue;
++        }
++        const VkDeviceSize compactedSize = compactedSizes[queryIndex++];
++        const VkDeviceSize originalSize = entries[i].sizesInfo.accelerationStructureSize;
++        const bool sizeIsSane = compactedSize >= 4096 && compactedSize * 32 >= originalSize;
++
++        if (compactedSize > 0 && compactedSize < originalSize && sizeIsSane) {
++          char compactedDebugName[256] = {0};
++          if (descs[i].debugName) {
++            snprintf(compactedDebugName, sizeof(compactedDebugName) - 1, "Buffer: %s compacted", descs[i].debugName);
++          }
++          lvk::AccelerationStructure compactedAS = {
++              .buildFlags = entries[i].accelStruct.buildFlags,
++              .buildRangeInfo = entries[i].accelStruct.buildRangeInfo,
++              .buffer = createBuffer(
++                  {
++                      .usage = lvk::BufferUsageBits_AccelStructStorage,
++                      .storage = lvk::StorageType_Device,
++                      .size = compactedSize,
++                      .debugName = compactedDebugName,
++                  },
++                  nullptr,
++                  outResult),
++          };
++          VK_ASSERT(createBlasHandle(compactedAS.buffer, compactedSize, &compactedAS.vkHandle));
++
++          const VkCopyAccelerationStructureInfoKHR copyInfo = {
++              .sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR,
++              .src = entries[i].accelStruct.vkHandle,
++              .dst = compactedAS.vkHandle,
++              .mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR,
++          };
++          vkCmdCopyAccelerationStructureKHR(vkCmdBuf, &copyInfo);
++          compactedAS.geometry = entries[i].accelStruct.geometry;
++          compactedAS.opacityMicromap = entries[i].accelStruct.opacityMicromap;
++          pendingDestroy.push_back(std::move(entries[i].accelStruct));
++          entries[i].accelStruct = std::move(compactedAS);
++        }
++      }
++
++      const VkMemoryBarrier2 ready = {
++          .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
++          .srcStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
++          .srcAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
++          .dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR |
++                          VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
++          .dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
++      };
++      const VkDependencyInfo dependency = {
++          .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
++          .memoryBarrierCount = 1,
++          .pMemoryBarriers = &ready,
++      };
++      vkCmdPipelineBarrier2(vkCmdBuf, &dependency);
++      wait(submit(cmdBuf, {}, {}));
++
++      for (const lvk::AccelerationStructure& source : pendingDestroy) {
++        vkDestroyAccelerationStructureKHR(vkDevice_, source.vkHandle, nullptr);
++      }
++    }
++
++    vkDestroyQueryPool(vkDevice_, compactionQueryPool, nullptr);
++  }
++
++  // Get device addresses and register in pool
++  for (uint32_t i = 0; i < count; i++) {
++    const VkAccelerationStructureDeviceAddressInfoKHR addrInfo = {
++        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
++        .accelerationStructure = entries[i].accelStruct.vkHandle,
++    };
++    entries[i].accelStruct.deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(vkDevice_, &addrInfo);
++    if (descs[i].buildFlags & lvk::AccelStructBuildFlagBits_AllowUpdate) {
++      entries[i].accelStruct.scratchBuffer = createBuffer({.usage = lvk::BufferUsageBits_Storage,
++                                                           .storage = lvk::StorageType_Device,
++                                                           .size = entries[i].sizesInfo.updateScratchSize + alignment - 1,
++                                                           .debugName = "Buffer: BLAS update scratch"},
++                                                          nullptr,
++                                                          outResult);
++    }
++    outHandles[i] = accelStructuresPool_.create(std::move(entries[i].accelStruct));
++  }
++
++  awaitingCreation_ = true;
++  Result::setResult(outResult, Result());
++}
++
++uint64_t lvk::VulkanContext::getAccelStructMemorySize(AccelStructHandle handle) const {
++  const lvk::AccelerationStructure* as = accelStructuresPool_.get(handle);
++  LVK_ASSERT(as);
++  const VulkanBuffer* buffer = as ? buffersPool_.get(as->buffer) : nullptr;
++  LVK_ASSERT(buffer);
++  return buffer ? uint64_t(buffer->bufferSize_) : 0u;
+ }
+ 
+ lvk::AccelStructHandle lvk::VulkanContext::createOpacityMicromap(const AccelStructDesc& desc, Result* outResult) {
+@@ -7838,6 +8051,7 @@ lvk::Result lvk::VulkanContext::createInstance() {
+ 
+   const VkBool32 gpuav_enable = enableGpuAV ? VK_TRUE : VK_FALSE;
+   const VkBool32 gpuav_post_process_descriptor_indexing = VK_FALSE; // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9222
++  const VkBool32 bestPractices_enable = config_.enableValidation && config_.enableValidationBestPractices ? VK_TRUE : VK_FALSE;
+   const VkBool32 syncval_enable = config_.enableValidation && config_.enableValidationSync ? VK_TRUE : VK_FALSE;
+   const VkBool32 legacy_detection = config_.enableValidation ? VK_TRUE : VK_FALSE;
+   const char* legacy_detection_mode = "ONLY_ENABLED";
+@@ -7857,6 +8071,7 @@ lvk::Result lvk::VulkanContext::createInstance() {
+   const VkLayerSettingEXT settings[] = {
+       LAYER_SETTINGS_BOOL32("gpuav_enable", &gpuav_enable),
+       LAYER_SETTINGS_BOOL32("gpuav_post_process_descriptor_indexing", &gpuav_post_process_descriptor_indexing),
++      LAYER_SETTINGS_BOOL32("validate_best_practices", &bestPractices_enable),
+       LAYER_SETTINGS_BOOL32("validate_sync", &syncval_enable),
+       LAYER_SETTINGS_BOOL32("syncval_submit_time_validation", &syncval_enable),
+       LAYER_SETTINGS_BOOL32("legacy_detection", &legacy_detection),
+diff --git a/lvk/vulkan/VulkanClasses.h b/lvk/vulkan/VulkanClasses.h
+index e018715..bc028c1 100644
+--- a/lvk/vulkan/VulkanClasses.h
++++ b/lvk/vulkan/VulkanClasses.h
+@@ -270,7 +270,8 @@ struct RenderPipelineState final {
+   VkVertexInputBindingDescription vkBindings_[VertexInput::LVK_VERTEX_BUFFER_MAX] = {};
+   VkVertexInputAttributeDescription vkAttributes_[VertexInput::LVK_VERTEX_ATTRIBUTES_MAX] = {};
+ 
+-  // non-owning, the last seen VkDescriptorSetLayout from VulkanContext::vkDSL_ (if the context has a new layout, invalidate all VkPipelines)
++  // non-owning, the last seen VkDescriptorSetLayout from VulkanContext::vkDSL_ (if the context has a new layout, invalidate all
++  // VkPipelines)
+   VkDescriptorSetLayout lastVkDescriptorSetLayout_ = VK_NULL_HANDLE;
+ 
+   VkShaderStageFlags shaderStageFlags_ = 0;
+@@ -635,6 +636,8 @@ class VulkanContext final : public IContext {
+ 
+   Holder<AccelStructHandle> createAccelerationStructure(const AccelStructDesc& desc, Result* outResult) override;
+ 
++  void createBLASBatch(const AccelStructDesc* descs, AccelStructHandle* outHandles, uint32_t count, Result* outResult) override;
++
+   void destroy(ComputePipelineHandle handle) override;
+   void destroy(RenderPipelineHandle handle) override;
+   void destroy(RayTracingPipelineHandle handle) override;
+@@ -647,6 +650,7 @@ class VulkanContext final : public IContext {
+   void destroy(Framebuffer& fb) override;
+ 
+   uint64_t gpuAddress(AccelStructHandle handle) const override;
++  uint64_t getAccelStructMemorySize(AccelStructHandle handle) const override;
+ 
+   Result upload(BufferHandle handle, const void* data, size_t size, size_t offset) override;
+   Result download(BufferHandle handle, void* data, size_t size, size_t offset) override;
+diff --git a/lvk/vulkan/VulkanUtils.cpp b/lvk/vulkan/VulkanUtils.cpp
+index 583eed1..0548aeb 100644
+--- a/lvk/vulkan/VulkanUtils.cpp
++++ b/lvk/vulkan/VulkanUtils.cpp
+@@ -339,6 +339,10 @@ VkFormat lvk::formatToVkFormat(lvk::Format format) {
+     return VK_FORMAT_ASTC_6x6_UNORM_BLOCK;
+   case lvk::Format_ASTC_6x6_SRGBA:
+     return VK_FORMAT_ASTC_6x6_SRGB_BLOCK;
++  case lvk::Format_ASTC_8x8_RGBA:
++    return VK_FORMAT_ASTC_8x8_UNORM_BLOCK;
++  case lvk::Format_ASTC_8x8_SRGBA:
++    return VK_FORMAT_ASTC_8x8_SRGB_BLOCK;
+   case lvk::Format_Z_UN16:
+     return VK_FORMAT_D16_UNORM;
+   case lvk::Format_Z_UN24:
+@@ -516,6 +520,10 @@ lvk::Format lvk::vkFormatToFormat(VkFormat format) {
+     return Format_ASTC_6x6_RGBA;
+   case VK_FORMAT_ASTC_6x6_SRGB_BLOCK:
+     return Format_ASTC_6x6_SRGBA;
++  case VK_FORMAT_ASTC_8x8_UNORM_BLOCK:
++    return Format_ASTC_8x8_RGBA;
++  case VK_FORMAT_ASTC_8x8_SRGB_BLOCK:
++    return Format_ASTC_8x8_SRGBA;
+   case VK_FORMAT_X8_D24_UNORM_PACK32:
+     return Format_Z_UN24;
+   case VK_FORMAT_D24_UNORM_S8_UINT:

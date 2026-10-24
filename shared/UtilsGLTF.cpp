@@ -1184,7 +1184,7 @@ void renderGLTF(GLTFContext &gltf, const mat4 &model, const mat4 &view, const ma
             buf.cmdBindComputePipeline(gltf.pipelineComputeAnimations);
             buf.cmdPushConstants(pc);
             // clang-format off
-      buf.cmdDispatchThreadGroups(
+      buf.cmdDispatch(
           { .width = gltf.maxVertices / 16 },
           { .buffers = { lvk::BufferHandle(gltf.vertexBuffer),
                          lvk::BufferHandle(gltf.morphStatesBuffer),
@@ -1263,7 +1263,7 @@ void renderGLTF(GLTFContext &gltf, const mat4 &model, const mat4 &view, const ma
         }
 
         buf.cmdBeginRendering(renderPass, framebuffer,
-                              {.textures = {lvk::TextureHandle(gltf.offscreenTex[gltf.currentOffscreenTex])}});
+                              {.sampledImages = {lvk::TextureHandle(gltf.offscreenTex[gltf.currentOffscreenTex])}});
         buf.cmdBindVertexBuffer(0, gltf.vertexBuffer, 0);
         buf.cmdBindIndexBuffer(gltf.indexBuffer, lvk::IndexFormat_UI32);
 

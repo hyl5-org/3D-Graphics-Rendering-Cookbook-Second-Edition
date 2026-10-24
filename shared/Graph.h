@@ -68,10 +68,11 @@ class LinearGraph
                               ImPlotFlags_CanvasOnly | ImPlotFlags_NoFrame | ImPlotFlags_NoInputs))
         {
             ImPlot::SetupAxes(nullptr, nullptr, ImPlotAxisFlags_NoDecorations, ImPlotAxisFlags_NoDecorations);
-            ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(color.r, color.g, color.b, color.a));
             ImPlot::PushStyleColor(ImPlotCol_PlotBg, ImVec4(0, 0, 0, 0));
-            ImPlot::PlotLine("#line", dataX_.data(), dataY_.data(), (int)graph_.size(), ImPlotLineFlags_None);
-            ImPlot::PopStyleColor(2);
+            ImPlotSpec lineStyle;
+            lineStyle.LineColor = ImVec4(color.r, color.g, color.b, color.a);
+            ImPlot::PlotLine("#line", dataX_.data(), dataY_.data(), (int)graph_.size(), lineStyle);
+            ImPlot::PopStyleColor();
             ImPlot::EndPlot();
         }
 

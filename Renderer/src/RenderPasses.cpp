@@ -188,7 +188,7 @@ void RTShadowAOPass::execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICo
         .color = {{.texture = rtResult}},
     };
     buf.cmdBeginRendering({.color = {{.loadOp = lvk::LoadOp_DontCare, .storeOp = lvk::StoreOp_Store}}}, fb,
-                          {.textures =
+                          {.sampledImages =
                                {
                                    lvk::TextureHandle(targets.gbufferRT1),
                                    lvk::TextureHandle(targets.opaqueDepth),
@@ -253,13 +253,10 @@ lvk::TextureHandle RTShadowAOPass::denoise(lvk::ICommandBuffer &buf, const Frame
         };
         buf.cmdBindComputePipeline(pipelineTemporal);
         buf.cmdPushConstants(pc);
-        buf.cmdDispatchThreadGroups(halfRes.divide2DRoundUp(16), {.textures = {
-                                                                      lvk::TextureHandle(rtResult),
-                                                                      lvk::TextureHandle(rtHistory[prevHist]),
-                                                                      lvk::TextureHandle(targets.opaqueDepth),
-                                                                      lvk::TextureHandle(prevDepth),
-                                                                      lvk::TextureHandle(rtHistory[currHist]),
-                                                                  }});
+        buf.cmdDispatch(halfRes.divide2DRoundUp(16),
+                        {.sampledImages = {lvk::TextureHandle(rtResult), lvk::TextureHandle(rtHistory[prevHist]),
+                                           lvk::TextureHandle(targets.opaqueDepth), lvk::TextureHandle(prevDepth)},
+                         .storageImages = {lvk::TextureHandle(rtHistory[currHist])}});
     }
 
     if (gSettings.rayTracing.denoiseMode == RTDenoiseMode_Atrous)
@@ -289,12 +286,9 @@ lvk::TextureHandle RTShadowAOPass::denoise(lvk::ICommandBuffer &buf, const Frame
             };
             buf.cmdBindComputePipeline(pipeline);
             buf.cmdPushConstants(pc);
-            buf.cmdDispatchThreadGroups(halfRes.divide2DRoundUp(16), {.textures = {
-                                                                          texIn,
-                                                                          texOut,
-                                                                          lvk::TextureHandle(targets.opaqueDepth),
-                                                                          lvk::TextureHandle(targets.gbufferRT1),
-                                                                      }});
+            buf.cmdDispatch(halfRes.divide2DRoundUp(16),
+                            {.sampledImages = {texIn, lvk::TextureHandle(targets.opaqueDepth), lvk::TextureHandle(targets.gbufferRT1)},
+                             .storageImages = {texOut}});
         };
 
         dispatchAtrous(pipelineAtrousStep1, lvk::TextureHandle(rtHistory[currHist]), lvk::TextureHandle(rtDenoised));
@@ -320,11 +314,9 @@ lvk::TextureHandle RTShadowAOPass::denoise(lvk::ICommandBuffer &buf, const Frame
             };
             buf.cmdBindComputePipeline(pipelineSpatialX);
             buf.cmdPushConstants(pc);
-            buf.cmdDispatchThreadGroups(halfRes.divide2DRoundUp(16), {.textures = {
-                                                                          lvk::TextureHandle(rtHistory[currHist]),
-                                                                          lvk::TextureHandle(rtDenoised),
-                                                                          lvk::TextureHandle(targets.opaqueDepth),
-                                                                      }});
+            buf.cmdDispatch(halfRes.divide2DRoundUp(16),
+                            {.sampledImages = {lvk::TextureHandle(rtHistory[currHist]), lvk::TextureHandle(targets.opaqueDepth)},
+                             .storageImages = {lvk::TextureHandle(rtDenoised)}});
         }
 
         // Spatial blur Y: rtDenoised -> rtResult
@@ -345,11 +337,9 @@ lvk::TextureHandle RTShadowAOPass::denoise(lvk::ICommandBuffer &buf, const Frame
             };
             buf.cmdBindComputePipeline(pipelineSpatialY);
             buf.cmdPushConstants(pc);
-            buf.cmdDispatchThreadGroups(halfRes.divide2DRoundUp(16), {.textures = {
-                                                                          lvk::TextureHandle(rtDenoised),
-                                                                          lvk::TextureHandle(rtResult),
-                                                                          lvk::TextureHandle(targets.opaqueDepth),
-                                                                      }});
+            buf.cmdDispatch(halfRes.divide2DRoundUp(16),
+                            {.sampledImages = {lvk::TextureHandle(rtDenoised), lvk::TextureHandle(targets.opaqueDepth)},
+                             .storageImages = {lvk::TextureHandle(rtResult)}});
         }
     }
 
@@ -432,7 +422,7 @@ lvk::TextureHandle OITPass::combine(const std::unique_ptr<lvk::IContext> &ctx, l
     buf.cmdBeginRendering(
         lvk::RenderPass{.color = {{.loadOp = lvk::LoadOp_DontCare, .storeOp = lvk::StoreOp_Store}}},
         lvk::Framebuffer{.color = {{.texture = targets.sceneColor}}},
-        {.textures = {lvk::TextureHandle(heads), texColor}, .buffers = {lvk::BufferHandle(fragmentLists)}});
+        {.sampledImages = {texColor}, .storageImages = {lvk::TextureHandle(heads)}, .buffers = {lvk::BufferHandle(fragmentLists)}});
 
     const struct OITPushConstants
     {
@@ -566,7 +556,7 @@ lvk::TextureHandle LightingPass::execute(const std::unique_ptr<lvk::IContext> &c
                                       .storeOp = lvk::StoreOp_Store,
                                       .clearColor = {0.0f, 0.0f, 0.0f, 1.0f}}}},
                           framebufferMain,
-                          {.textures =
+                          {.sampledImages =
                                {
                                    lvk::TextureHandle(targets.sceneColor),
                                    lvk::TextureHandle(targets.gbufferRT1),
@@ -704,8 +694,9 @@ void HDRPass::execute(lvk::ICommandBuffer &buf, lvk::TextureHandle texColor, flo
     buf.cmdPushDebugGroupLabel("HDR BrightPass", 0xffffff00);
     buf.cmdBindComputePipeline(pipelineBrightPass);
     buf.cmdPushConstants(pcBright);
-    buf.cmdDispatchThreadGroups(kBloomSize.divide2D(16),
-                                {.textures = {texColor, lvk::TextureHandle(luminanceViews[0])}});
+    buf.cmdDispatch(kBloomSize.divide2D(16),
+                    {.sampledImages = {texColor},
+                     .storageImages = {lvk::TextureHandle(brightPass), lvk::TextureHandle(luminanceViews[0])}});
     buf.cmdGenerateMipmap(luminanceViews[0]);
     buf.cmdPopDebugGroupLabel();
 
@@ -745,8 +736,8 @@ void HDRPass::runBloom(lvk::ICommandBuffer &buf, lvk::SamplerHandle samplerClamp
         });
         if (gSettings.hdr.enableBloom)
         {
-            buf.cmdDispatchThreadGroups(kBloomSize.divide2D(16),
-                                        {.textures = {pass.texIn, pass.texOut, lvk::TextureHandle(brightPass)}});
+            buf.cmdDispatch(kBloomSize.divide2D(16),
+                            {.sampledImages = {pass.texIn}, .storageImages = {pass.texOut}});
         }
     }
     buf.cmdPopDebugGroupLabel();
@@ -769,11 +760,9 @@ void HDRPass::runAdaptation(lvk::ICommandBuffer &buf, float deltaSeconds)
     };
     buf.cmdBindComputePipeline(pipelineAdaptationPass);
     buf.cmdPushConstants(pcAdaptation);
-    buf.cmdDispatchThreadGroups({1, 1, 1}, {.textures = {
-                                                lvk::TextureHandle(luminanceViews[0]),
-                                                lvk::TextureHandle(adaptedLuminance[0]),
-                                                lvk::TextureHandle(adaptedLuminance[1]),
-                                            }});
+    buf.cmdDispatch({1, 1, 1},
+                    {.storageImages = {lvk::TextureHandle(luminanceViews.back()), lvk::TextureHandle(adaptedLuminance[0]),
+                                       lvk::TextureHandle(adaptedLuminance[1])}});
     buf.cmdPopDebugGroupLabel();
 }
 
@@ -781,7 +770,7 @@ void HDRPass::toneMap(lvk::ICommandBuffer &buf, const lvk::Framebuffer &framebuf
 {
     buf.cmdPushDebugGroupLabel("ToneMap", 0xffff00ff);
     buf.cmdBeginRendering({.color = {{.loadOp = lvk::LoadOp_DontCare, .clearColor = {1.0f, 1.0f, 1.0f, 1.0f}}}},
-                          framebufferMain, {.textures = {lvk::TextureHandle(adaptedLuminance[1])}});
+                          framebufferMain, {.sampledImages = {lvk::TextureHandle(adaptedLuminance[1])}});
     buf.cmdBindRenderPipeline(pipelineToneMap);
     buf.cmdPushConstants(pc);
     buf.cmdBindDepthState({});
@@ -868,7 +857,7 @@ void renderSkyboxPass(lvk::ICommandBuffer &buf, const FrameTargets &targets, con
         lvk::RenderPass{.color = {{.loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store}},
                         .depth = {.loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store}},
         framebufferSkybox,
-        {.textures = {lvk::TextureHandle(skyBox.texSkybox), lvk::TextureHandle(targets.opaqueDepth)}});
+        {.sampledImages = {lvk::TextureHandle(skyBox.texSkybox), lvk::TextureHandle(targets.opaqueDepth)}});
     skyBox.draw(buf, view, proj);
     buf.cmdEndRendering();
 }
@@ -891,15 +880,15 @@ void renderTransparentPass(const std::unique_ptr<lvk::IContext> &ctx, VulkanApp 
     buf.cmdBeginRendering(lvk::RenderPass{.color = {{.loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store}},
                                           .depth = {.loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store}},
                           framebufferTransparent,
-                          {.textures =
+                          {.sampledImages =
                                {
-                                   lvk::TextureHandle(oit.heads),
                                    lvk::TextureHandle(targets.opaqueDepth),
                                    lvk::TextureHandle(targets.lightingColor),
                                    lvk::TextureHandle(skyBox.texSkybox),
                                    lvk::TextureHandle(skyBox.texSkyboxIrradiance),
                                    lvk::TextureHandle(shadows.map),
                                },
+                           .storageImages = {lvk::TextureHandle(oit.heads)},
                            .buffers = {
                                lvk::BufferHandle(drawLists.transparent.bufferIndirect_),
                                lvk::BufferHandle(drawLists.transparent.bufferDrawData_),

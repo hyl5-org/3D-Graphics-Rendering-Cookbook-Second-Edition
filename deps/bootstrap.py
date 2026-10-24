@@ -198,9 +198,9 @@ def cloneRepository(type, url, target_name, revision, try_only_local_operations 
         elif not try_only_local_operations:
             log("Repository " + target_dir + " already exists; fetching instead of cloning")
             if recursive:
-                dieIfNonZero(executeCommand(TOOL_COMMAND_GIT + " -C " + target_dir + " fetch --recurse-submodules"))
+                dieIfNonZero(executeCommand(TOOL_COMMAND_GIT + " -C " + target_dir + " fetch --recurse-submodules " + escapifyPath(url)))
             else:
-                dieIfNonZero(executeCommand(TOOL_COMMAND_GIT + " -C " + target_dir + " fetch"))
+                dieIfNonZero(executeCommand(TOOL_COMMAND_GIT + " -C " + target_dir + " fetch " + escapifyPath(url)))
 
         if revision is None:
             revision = "HEAD"

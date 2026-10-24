@@ -151,7 +151,7 @@ class VkPipelineDeferred : public VKPipeline
         frag_ =
             frag.valid() ? std::move(frag) : loadRendererShader(ctx, "gbuffer_opaque.frag.slang");
         lvk::ColorAttachment attachments[8] = {};
-        attachments[0].format = lvk::Format::Format_R11G11B10_F;
+        attachments[0].format = lvk::Format::Format_B10G11R11_UF;
         attachments[1].format = lvk::Format::Format_A2B10G10R10_UN;
         attachments[2].format = lvk::Format::Format_RGBA_UN8;
         attachments[3].format = lvk::Format::Format_RGBA_UN8;
