@@ -6,6 +6,7 @@
 #include "scene/Skybox.h"
 
 #include <array>
+#include <cstddef>
 
 namespace FinalDemo
 {
@@ -64,6 +65,7 @@ struct CombineSSAOPushConstants
 struct LightingPassPushConstants
 {
     mat4 invViewProj;
+    vec4 cameraPos;
     uint32_t sceneColor;
     uint32_t gbuffer1;
     uint32_t gbuffer2;
@@ -74,6 +76,9 @@ struct LightingPassPushConstants
     uint32_t sampler;
     uint64_t bufferLight;
 };
+static_assert(sizeof(LightingPassPushConstants) <= 128);
+static_assert(offsetof(LightingPassPushConstants, cameraPos) == 64);
+static_assert(offsetof(LightingPassPushConstants, sceneColor) == 80);
 
 struct HDRPushConstants
 {

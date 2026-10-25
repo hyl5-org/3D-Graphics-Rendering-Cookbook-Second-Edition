@@ -55,22 +55,30 @@ struct FragmentOutput
         }
     }
 
-    float3 emissive = float3(0.0);
+    float3 emissive = mat.emissiveFactorAlphaCutoff.rgb;
     if (mat.emissiveTexture > 0)
     {
-        emissive = mat.emissiveFactorAlphaCutoff.rgb *
-                   textureBindless2D(mat.emissiveTexture, mat.emissiveTextureSampler, float2(input.uv)).rgb;
+        emissive *= textureBindless2D(mat.emissiveTexture, mat.emissiveTextureSampler, input.uv).rgb;
     }
 
     const float specular = 0.5;
-    const float metallic = 0.0;
-    const float roughness = 1.0;
-    const float ao = 1.0;
+    float metallic = mat.metallicRoughnessNormalOcclusion.x;
+    float roughness = mat.metallicRoughnessNormalOcclusion.y;
+    if (mat.metallicRoughnessTexture != 0)
+    {
+        float4 mr = textureBindless2D(mat.metallicRoughnessTexture, mat.metallicRoughnessTextureSampler, input.uv);
+        metallic *= mr.b;
+        roughness *= mr.g;
+    }
+    float ao = 1.0;
+    if (mat.occlusionTexture != 0)
+        ao = lerp(1.0, textureBindless2D(mat.occlusionTexture, mat.occlusionTextureSampler, input.uv).r,
+                   saturate(mat.metallicRoughnessNormalOcclusion.w));
     const float shadingModelId = 0.0;
 
     output.outSceneColor = float4(emissive, 1.0);
     output.outGBuffer1 = float4(encodeOctahedron(n), 0.0, 0.0);
-    output.outGBuffer2 = float4(metallic, specular, roughness, shadingModelId);
+    output.outGBuffer2 = float4(saturate(metallic), specular, saturate(roughness), shadingModelId);
     output.outGBuffer3 = float4(baseColor.rgb, ao);
 
     return output;
