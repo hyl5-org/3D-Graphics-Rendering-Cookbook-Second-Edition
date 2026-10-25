@@ -25,6 +25,8 @@ struct PushConstants
     uint gbuffer3;
     uint depth;
     uint texSkyboxIrradiance;
+    uint texSkybox;
+    uint texBRDF_LUT;
     uint smpl;
     LightBuffer light;
 };
@@ -97,11 +99,18 @@ struct FragmentOutput
     float3 sky = float3(-n.x, n.y, -n.z);
     half3 ibl = half3(textureBindlessCube(pc.texSkyboxIrradiance, 0, sky).rgb);
 
-    float3 F = pbrFresnel(pbrF0(float3(baseColor), metallic), dot(n, v));
+    float NdotV = saturate(dot(n, v));
+    float3 f0 = pbrF0(float3(baseColor), metallic);
+    float3 F = pbrFresnel(f0, NdotV);
     float3 indirectDiffuse = pbrIndirectDiffuse(float3(baseColor), metallic, F, float3(ibl), ao * pc.light->iblIntensity);
     float3 lightRadiance = pc.light->lightColorIntensity.rgb * pc.light->lightColorIntensity.a;
     float3 direct = pbrMetallicRoughness(float3(baseColor), metallic, roughness, n, v, l) * lightRadiance * shadowVisibility;
-    float3 color = float3(scene) + indirectDiffuse + direct;
+    float3 r = reflect(-v, n);
+    float lod = roughness * textureBindlessCubeMaxLod(pc.texSkybox);
+    float3 radiance = textureBindlessCubeLod(pc.texSkybox, pc.smpl, float3(-r.x, r.y, -r.z), lod).rgb;
+    float2 brdf = textureBindless2DLod(pc.texBRDF_LUT, pc.smpl, float2(NdotV, roughness), 0).rg;
+    float3 reflection = pbrIndirectSpecular(f0, brdf, radiance) * pc.light->iblIntensity;
+    float3 color = float3(scene) + indirectDiffuse + direct + reflection;
     output.out_FragColor = float4(float3(color), 1.0);
 
     return output;

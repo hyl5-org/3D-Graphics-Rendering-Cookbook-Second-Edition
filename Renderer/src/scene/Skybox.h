@@ -13,6 +13,7 @@ class Skybox
     {
         texSkybox = loadTexture(ctx, skyboxTexture, lvk::TextureType_Cube);
         texSkyboxIrradiance = loadTexture(ctx, skyboxIrradiance, lvk::TextureType_Cube);
+        texBRDF_LUT = loadTexture(ctx, "data/brdfLUT.ktx");
 
         vertSkybox = loadRendererShader(ctx, "skybox.vert.slang");
         fragSkybox = loadRendererShader(ctx, "skybox.frag.slang");
@@ -52,6 +53,7 @@ class Skybox
 
     lvk::Holder<lvk::TextureHandle> texSkybox;
     lvk::Holder<lvk::TextureHandle> texSkyboxIrradiance;
+    lvk::Holder<lvk::TextureHandle> texBRDF_LUT;
     lvk::Holder<lvk::ShaderModuleHandle> vertSkybox;
     lvk::Holder<lvk::ShaderModuleHandle> fragSkybox;
     lvk::Holder<lvk::RenderPipelineHandle> pipelineSkybox;

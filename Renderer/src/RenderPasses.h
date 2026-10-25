@@ -50,12 +50,15 @@ struct LightingPassPushConstants
     uint32_t gbuffer3;
     uint32_t depth;
     uint32_t texSkyboxIrradiance;
+    uint32_t texSkybox;
+    uint32_t texBRDF_LUT;
     uint32_t sampler;
     uint64_t bufferLight;
 };
 static_assert(sizeof(LightingPassPushConstants) <= 256);
 static_assert(offsetof(LightingPassPushConstants, cameraPos) == 128);
 static_assert(offsetof(LightingPassPushConstants, sceneColor) == 160);
+static_assert(offsetof(LightingPassPushConstants, bufferLight) == 200);
 
 struct HDRPushConstants
 {

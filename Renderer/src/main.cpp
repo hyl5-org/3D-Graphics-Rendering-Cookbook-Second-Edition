@@ -39,6 +39,7 @@ VULKAN_APP_MAIN
     FrameTargets targets = createGBufferTargets(ctx, app.getDepthFormat(), renderSize);
     FixedFoveatedRendering foveation(ctx, renderSize, app.isOpenXR());
     lvk::Holder<lvk::SamplerHandle> samplerClamp = ctx->createSampler({
+        .mipMap = lvk::SamplerMip_Linear,
         .wrapU = lvk::SamplerWrap_Clamp,
         .wrapV = lvk::SamplerWrap_Clamp,
         .wrapW = lvk::SamplerWrap_Clamp,
