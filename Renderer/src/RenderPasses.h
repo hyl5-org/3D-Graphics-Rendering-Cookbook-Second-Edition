@@ -65,20 +65,23 @@ struct CombineSSAOPushConstants
 struct LightingPassPushConstants
 {
     mat4 invViewProj;
-    vec4 cameraPos;
+    vec3 cameraPos; // Keep the additional IBL descriptors within the 128-byte push-constant range.
     uint32_t sceneColor;
     uint32_t gbuffer1;
     uint32_t gbuffer2;
     uint32_t gbuffer3;
     uint32_t depth;
     uint32_t texSkyboxIrradiance;
+    uint32_t texSkybox;
+    uint32_t texBRDF_LUT;
     uint32_t texRTShadowAO;
     uint32_t sampler;
     uint64_t bufferLight;
 };
 static_assert(sizeof(LightingPassPushConstants) <= 128);
 static_assert(offsetof(LightingPassPushConstants, cameraPos) == 64);
-static_assert(offsetof(LightingPassPushConstants, sceneColor) == 80);
+static_assert(offsetof(LightingPassPushConstants, sceneColor) == 76);
+static_assert(offsetof(LightingPassPushConstants, bufferLight) == 120);
 
 struct HDRPushConstants
 {
