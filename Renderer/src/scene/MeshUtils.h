@@ -93,14 +93,7 @@ inline Material convertAIMaterial(const aiMaterial *M, std::vector<std::string> 
 
     aiColor4D Color;
 
-    if (aiGetMaterialColor(M, AI_MATKEY_COLOR_AMBIENT, &Color) == AI_SUCCESS)
-    {
-        D.emissiveFactor = {Color.r, Color.g, Color.b, Color.a};
-        if (D.emissiveFactor.w > 1.0f)
-        {
-            D.emissiveFactor.w = 1.0f;
-        }
-    }
+    // OBJ Ka is an ambient coefficient, not emitted radiance. Only Ke contributes to emissive.
     if (aiGetMaterialColor(M, AI_MATKEY_COLOR_DIFFUSE, &Color) == AI_SUCCESS)
     {
         D.baseColorFactor = {Color.r, Color.g, Color.b, Color.a};
@@ -111,7 +104,7 @@ inline Material convertAIMaterial(const aiMaterial *M, std::vector<std::string> 
     }
     if (aiGetMaterialColor(M, AI_MATKEY_COLOR_EMISSIVE, &Color) == AI_SUCCESS)
     {
-        D.emissiveFactor += vec4(Color.r, Color.g, Color.b, Color.a);
+        D.emissiveFactor = vec4(Color.r, Color.g, Color.b, Color.a);
         if (D.emissiveFactor.w > 1.0f)
         {
             D.emissiveFactor.w = 1.0f;
