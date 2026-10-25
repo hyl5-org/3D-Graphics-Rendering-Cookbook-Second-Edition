@@ -553,6 +553,7 @@ lvk::TextureHandle LightingPass::execute(const std::unique_ptr<lvk::IContext> &c
     buf.cmdPushDebugGroupLabel("Lighting", 0xffff00ff);
     pc.invViewProj = glm::inverse(proj * view);
     pc.sceneColor = targets.sceneColor.index();
+    pc.cameraPos = glm::inverse(view)[3];
     pc.gbuffer1 = targets.gbufferRT1.index();
     pc.gbuffer2 = targets.gbufferRT2.index();
     pc.gbuffer3 = targets.gbufferRT3.index();
