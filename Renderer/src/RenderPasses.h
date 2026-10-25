@@ -5,6 +5,7 @@
 #include "scene/Skybox.h"
 
 #include <array>
+#include <cstddef>
 
 class VulkanApp;
 
@@ -42,6 +43,7 @@ struct MeshPushConstants
 struct LightingPassPushConstants
 {
     mat4 invViewProj[2];
+    vec4 cameraPos[2];
     uint32_t sceneColor;
     uint32_t gbuffer1;
     uint32_t gbuffer2;
@@ -51,6 +53,9 @@ struct LightingPassPushConstants
     uint32_t sampler;
     uint64_t bufferLight;
 };
+static_assert(sizeof(LightingPassPushConstants) <= 256);
+static_assert(offsetof(LightingPassPushConstants, cameraPos) == 128);
+static_assert(offsetof(LightingPassPushConstants, sceneColor) == 160);
 
 struct HDRPushConstants
 {

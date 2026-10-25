@@ -1,4 +1,5 @@
 #include "Bindless.slang"
+#include "PBR.slang"
 
 #include "Shadows.slang"
 
@@ -17,6 +18,7 @@ typealias LightBuffer = LightBufferData *;
 struct PushConstants
 {
     float4x4 invViewProj[2];
+    float4 cameraPos[2];
     uint sceneColor;
     uint gbuffer1;
     uint gbuffer2;
@@ -73,6 +75,7 @@ struct FragmentOutput
     }
 
     half4 g1 = half4(textureBindless2DArray(pc.gbuffer1, pc.smpl, input.uv, input.viewId));
+    float4 g2 = textureBindless2DArray(pc.gbuffer2, pc.smpl, input.uv, input.viewId);
 
     half4 g3 = half4(textureBindless2DArray(pc.gbuffer3, pc.smpl, input.uv, input.viewId));
 
@@ -87,18 +90,18 @@ struct FragmentOutput
     shadowVisibility = shadow(shadowCoords, pc.light->shadowTexture, pc.light->shadowSampler);
 
     float3 l = -normalize(pc.light->lightDir.xyz);
-    half nDotL = half(max(dot(n, l), 0.0));
+    float3 v = normalize(pc.cameraPos[input.viewId].xyz - worldPos);
+    float metallic = saturate(g2.x);
+    float roughness = saturate(g2.z);
 
     float3 sky = float3(-n.x, n.y, -n.z);
     half3 ibl = half3(textureBindlessCube(pc.texSkyboxIrradiance, 0, sky).rgb);
 
-    const half3 f0 = half3(0.04);
-    half3 diffuseAlbedo = baseColor * (half3(1.0) - f0);
-    half3 indirectDiffuse = ibl * diffuseAlbedo * half(clamp(ao, 0.0, 1.0) * pc.light->iblIntensity);
-    half3 lightColor = half3(pc.light->lightColorIntensity.rgb);
-    half lightIntensity = half(pc.light->lightColorIntensity.a);
-    half3 directDiffuse = lightColor * lightIntensity * half3(nDotL) * diffuseAlbedo * half(shadowVisibility);
-    half3 color = scene + indirectDiffuse + directDiffuse;
+    float3 F = pbrFresnel(pbrF0(float3(baseColor), metallic), dot(n, v));
+    float3 indirectDiffuse = pbrIndirectDiffuse(float3(baseColor), metallic, F, float3(ibl), ao * pc.light->iblIntensity);
+    float3 lightRadiance = pc.light->lightColorIntensity.rgb * pc.light->lightColorIntensity.a;
+    float3 direct = pbrMetallicRoughness(float3(baseColor), metallic, roughness, n, v, l) * lightRadiance * shadowVisibility;
+    float3 color = float3(scene) + indirectDiffuse + direct;
     output.out_FragColor = float4(float3(color), 1.0);
 
     return output;

@@ -434,6 +434,8 @@ lvk::TextureHandle LightingPass::execute(const std::unique_ptr<lvk::IContext> &c
     pc.invViewProj[0] = gSettings.view.inverseViewProjection[0];
     pc.invViewProj[1] = gSettings.view.inverseViewProjection[1];
     pc.sceneColor = targets.sceneColor.index();
+    pc.cameraPos[0] = gSettings.view.cameraPosition[0];
+    pc.cameraPos[1] = gSettings.view.cameraPosition[1];
     pc.gbuffer1 = targets.gbufferRT1.index();
     pc.gbuffer2 = targets.gbufferRT2.index();
     pc.gbuffer3 = targets.gbufferRT3.index();
