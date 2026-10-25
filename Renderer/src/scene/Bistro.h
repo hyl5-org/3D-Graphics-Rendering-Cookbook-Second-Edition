@@ -5,6 +5,7 @@
 #include "shared/Scene/VtxData.h"
 
 #include "scene/SceneUtils.h"
+#include <fstream>
 
 #if !defined(fileNameCachedMeshes) || !defined(fileNameCachedMaterials) || !defined(fileNameCachedHierarchy)
 // by default, use the precached Bistro scene
@@ -19,8 +20,12 @@
 
 void loadBistro(MeshData &meshData, Scene &scene)
 {
+    const std::string importVersionFile = std::string(fileNameCachedMaterials) + ".import-ke-v1";
     bool cacheValid = isMeshDataValid(fileNameCachedMeshes) && isMeshHierarchyValid(fileNameCachedHierarchy) &&
                       isMeshMaterialsValid(fileNameCachedMaterials);
+    cacheValid = cacheValid && std::filesystem::exists(importVersionFile) &&
+                 std::filesystem::last_write_time(importVersionFile) >=
+                     std::filesystem::last_write_time(fileNameCachedMaterials);
     if (cacheValid)
     {
         loadMeshDataMaterials(fileNameCachedMaterials, meshData);
@@ -31,7 +36,7 @@ void loadBistro(MeshData &meshData, Scene &scene)
     }
     if (!cacheValid)
     {
-        LLOGL("No cached mesh data found. Precaching...\n\n");
+        LLOGL("Bistro cache missing or outdated. Rebuilding...\n\n");
 
         MeshData meshData_Exterior;
         Scene ourScene_Exterior;
@@ -109,6 +114,7 @@ void loadBistro(MeshData &meshData, Scene &scene)
         saveMeshData(fileNameCachedMeshes, meshData);
         saveMeshDataMaterials(fileNameCachedMaterials, meshData);
         saveScene(fileNameCachedHierarchy, ourScene);
+        std::ofstream(importVersionFile, std::ios::trunc) << "Ke-only emissive import v1\n";
     }
 
     const MeshFileHeader header = loadMeshData(fileNameCachedMeshes, meshData);
