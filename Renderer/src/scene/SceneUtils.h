@@ -112,9 +112,24 @@ std::string convertTexture(const std::string &file, const std::string &basePath,
                                                 (sRGB ? "_srgb_v2" : "_linear_v2")) +
                                 std::string(".ktx");
 
+    // Material-import revisions do not require recompressing unchanged, versioned textures.
+    const std::string resolvedSource = fixTextureFile(srcFile);
+    if (fs::exists(newFile) && fs::exists(resolvedSource))
+    {
+        const auto cacheTime = fs::last_write_time(newFile);
+        bool current = cacheTime >= fs::last_write_time(resolvedSource);
+        if (auto it = opacityMapIndices.find(file); it != opacityMapIndices.end())
+        {
+            const std::string mask = fixTextureFile(replaceAll(basePath + opacityMaps[it->second], "\\", "/"));
+            current = current && fs::exists(mask) && cacheTime >= fs::last_write_time(mask);
+        }
+        if (current)
+            return newFile;
+    }
+
     // load this image
     int origWidth, origHeight, texChannels;
-    stbi_uc *pixels = stbi_load(fixTextureFile(srcFile).c_str(), &origWidth, &origHeight, &texChannels, STBI_rgb_alpha);
+    stbi_uc *pixels = stbi_load(resolvedSource.c_str(), &origWidth, &origHeight, &texChannels, STBI_rgb_alpha);
     uint8_t *src = pixels;
     texChannels = STBI_rgb_alpha;
 
