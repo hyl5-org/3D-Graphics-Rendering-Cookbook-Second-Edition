@@ -1,4 +1,5 @@
 #include "Bindless.slang"
+#include "ColorSpace.slang"
 
 // Distinct, observable PSO specializations; the normal renderer keeps gain = 1.
 [[vk::constant_id(0)]] const float psoGain = 1.0;
@@ -30,6 +31,7 @@ struct PushConstants
 
     float startCompression;
     float desaturation;
+    uint encodeSRGB;
 };
 [[vk::push_constant]] ConstantBuffer<PushConstants> pc;
 
@@ -123,7 +125,11 @@ struct FragmentOutput
         color = PBRNeutralToneMapping(pc.exposure * color, pc.startCompression, pc.desaturation);
     }
 
-    output.out_FragColor = float4((color + pc.bloomStrength * bloom) * psoGain, 1.0);
+    color = (color + pc.bloomStrength * bloom) * psoGain;
+    // sRGB attachments encode automatically; SDR UNORM attachments require explicit encoding.
+    if (pc.encodeSRGB != 0)
+        color = linearToSRGB(color);
+    output.out_FragColor = float4(color, 1.0);
 
     return output;
 }

@@ -676,6 +676,7 @@ HDRPass::HDRPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &
         .texLuminance = adaptedLuminance[0].index(),
         .texBloom = bloomPass.index(),
         .sampler = samplerClamp.index(),
+        .encodeSRGB = (swapchainFormat == lvk::Format_RGBA_UN8 || swapchainFormat == lvk::Format_BGRA_UN8) ? 1u : 0u,
     };
 }
 

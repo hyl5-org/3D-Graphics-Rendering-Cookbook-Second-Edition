@@ -199,8 +199,12 @@ lvk::Holder<lvk::TextureHandle> loadTexture(const std::unique_ptr<lvk::IContext>
             {
             case GL_COMPRESSED_RGBA_BPTC_UNORM:
                 return lvk::Format_BC7_RGBA;
+            case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:
+                return lvk::Format_BC7_SRGBA;
             case GL_RGBA8:
                 return lvk::Format_RGBA_UN8;
+            case GL_SRGB8_ALPHA8:
+                return lvk::Format_RGBA_SRGB8;
             case GL_RG16F:
                 return lvk::Format_RG_F16;
             case GL_RGBA16F:

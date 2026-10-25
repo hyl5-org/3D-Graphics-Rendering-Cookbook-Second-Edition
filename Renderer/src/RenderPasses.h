@@ -105,7 +105,9 @@ struct HDRPushConstants
 
     float startCompression = 0.8f;
     float desaturation = 0.15f;
+    uint32_t encodeSRGB = 0;
 };
+static_assert(offsetof(HDRPushConstants, encodeSRGB) == 64);
 
 struct BlurPass
 {
