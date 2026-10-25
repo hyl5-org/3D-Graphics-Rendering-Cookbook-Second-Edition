@@ -26,6 +26,7 @@ VULKAN_APP_MAIN
     std::unique_ptr<lvk::IContext> &ctx = app.ctx_;
     FrameTargets targets = createGBufferTargets(ctx, app.getDepthFormat());
     lvk::Holder<lvk::SamplerHandle> samplerClamp = ctx->createSampler({
+        .mipMap = lvk::SamplerMip_Linear,
         .wrapU = lvk::SamplerWrap_Clamp,
         .wrapV = lvk::SamplerWrap_Clamp,
         .wrapW = lvk::SamplerWrap_Clamp,
