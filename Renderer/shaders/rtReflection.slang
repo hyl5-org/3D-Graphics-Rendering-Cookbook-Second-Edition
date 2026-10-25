@@ -49,7 +49,7 @@ struct PushConstants
 
 struct RayPayload
 {
-    float4 color;
+    float3 color;
     uint depth;
 };
 struct ShadowPayload
@@ -64,15 +64,15 @@ void rayGenMain()
     uint2 size = DispatchRaysDimensions().xy;
     float2 uv = (float2(pixel) + 0.5) / float2(size);
     // Load depth and normal from the same full-resolution pixel, without blending across silhouettes.
-    int2 sourcePixel = min(int2(uv * float2(textureBindlessSize2D(pc.depth))),
-                           textureBindlessSize2D(pc.depth) - 1);
+    int2 depthSize = textureBindlessSize2D(pc.depth);
+    int2 sourcePixel = min(int2(uv * float2(depthSize)), depthSize - 1);
     float depth = kTextures2D[pc.depth].Load(int3(sourcePixel, 0)).r;
     if (depth >= 0.9999)
     {
         kTextures2DInOut[pc.outTexture][pixel] = float4(0.0);
         return;
     }
-    float2 sourceUV = (float2(sourcePixel) + 0.5) / float2(textureBindlessSize2D(pc.depth));
+    float2 sourceUV = (float2(sourcePixel) + 0.5) / float2(depthSize);
     float3 n = decodeOctahedron(kTextures2D[pc.gbuffer1].Load(int3(sourcePixel, 0)).xy);
     float3 worldPos = reconstructWorldPosition(sourceUV, depth, pc.invViewProj);
     float3 viewDir = normalize(pc.cameraPos.xyz - worldPos);
@@ -82,13 +82,13 @@ void rayGenMain()
     ray.TMin = 0.001;
     ray.TMax = 1e6;
     RayPayload payload;
-    payload.color = float4(0.0);
+    payload.color = float3(0.0);
     payload.depth = 0;
     float3 accumulatedColor = float3(0.0, 0.0, 0.0);
     //while(payload.depth < pc.maxDepth)
     {
         TraceRay(kTLAS[pc.tlas], RAY_FLAG_FORCE_OPAQUE, 0xff, 0, 0, 0, ray, payload);
-        accumulatedColor += payload.color.rgb;
+        accumulatedColor += payload.color;
         payload.depth++;
     }
     // Unweighted incoming radiance. The receiving surface's Fresnel is applied in Lighting.
@@ -100,7 +100,7 @@ void missMain(inout RayPayload payload)
 {
     // Match the environment coordinate convention used by the renderer's skybox.
     float3 dir = WorldRayDirection();
-    payload.color = textureBindlessCubeLod(pc.envTex, 0, float3(-dir.x, dir.y, -dir.z), 0);
+    payload.color = textureBindlessCubeLod(pc.envTex, 0, float3(-dir.x, dir.y, -dir.z), 0).rgb;
     payload.depth = 0xff;
 }
 
@@ -122,8 +122,8 @@ void closestHitMain(inout RayPayload payload, in BuiltInTriangleIntersectionAttr
     VertexAttribute a0 = pc.verticesAttributes->vtx[triangle.x];
     VertexAttribute a1 = pc.verticesAttributes->vtx[triangle.y];
     VertexAttribute a2 = pc.verticesAttributes->vtx[triangle.z];
-    float3 normal = normalize(unpackSnorm10x3(a0.normal) * bary.x + unpackSnorm10x3(a1.normal) * bary.y
-                              + unpackSnorm10x3(a2.normal) * bary.z);
+    float3 normal = unpackSnorm10x3(a0.normal) * bary.x + unpackSnorm10x3(a1.normal) * bary.y
+                    + unpackSnorm10x3(a2.normal) * bary.z;
     float3 N = normalize(mul(normal, (float3x3)WorldToObject3x4()));
     float3 V = -normalize(WorldRayDirection());
     if (dot(N, V) < 0.0)
@@ -155,5 +155,5 @@ void closestHitMain(inout RayPayload payload, in BuiltInTriangleIntersectionAttr
     PBRLighting lighting = evaluatePBRLighting(baseColor, metallic, roughness, N, V, L,
                                                1.0, 1.0, pc.texSkyboxIrradiance,
                                                pc.envTex, pc.texBRDF_LUT, pc.smpl);
-    payload.color = float4(emissive + lighting.total(), 1.0);
+    payload.color = emissive + lighting.total();
 }

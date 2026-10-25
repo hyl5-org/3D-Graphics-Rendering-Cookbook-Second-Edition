@@ -376,6 +376,7 @@ RTReflectionPass::RTReflectionPass(const std::unique_ptr<lvk::IContext> &ctx, co
                 lvk::ShaderModuleHandle(msShadow),
             },
         .hitGroups = {{.smClosestHit = chs}},
+        .maxRecursionDepth = 2,
     });
     const lvk::Dimensions Res = {.width = targets.sizeFb.width / rtDownsampleScale,
                                  .height = targets.sizeFb.height / rtDownsampleScale};

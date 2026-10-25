@@ -21,7 +21,8 @@ struct PBRLighting
 // Explicit LOD sampling keeps the same function usable in fragment and closest-hit stages.
 PBRLighting evaluatePBRLighting(float3 baseColor, float metallic, float roughness,
                                 float3 N, float3 V, float3 L, float shadowVisibility, float ao,
-                                uint texIrradiance, uint texEnvironment, uint texBRDF, uint samplerId)
+                                uint texIrradiance, uint texEnvironment, uint texBRDF, uint samplerId,
+                                bool computeSpecularIBL = true)
 {
     metallic = saturate(metallic);
     roughness = saturate(roughness);
@@ -35,10 +36,14 @@ PBRLighting evaluatePBRLighting(float3 baseColor, float metallic, float roughnes
     float3 irradiance = textureBindlessCubeLod(texIrradiance, samplerId, sky, 0).rgb;
     result.indirectDiffuse = pbrIndirectDiffuse(baseColor, metallic, result.fresnel, irradiance, ao);
 
-    float3 r = reflect(-V, N);
-    float lod = roughness * textureBindlessCubeMaxLod(texEnvironment);
-    float3 radiance = textureBindlessCubeLod(texEnvironment, samplerId, float3(-r.x, r.y, -r.z), lod).rgb;
-    float2 brdf = textureBindless2DLod(texBRDF, samplerId, float2(NdotV, roughness), 0).rg;
-    result.indirectSpecular = pbrIndirectSpecular(f0, brdf, radiance);
+    result.indirectSpecular = float3(0.0);
+    if (computeSpecularIBL)
+    {
+        float3 r = reflect(-V, N);
+        float lod = roughness * textureBindlessCubeMaxLod(texEnvironment);
+        float3 radiance = textureBindlessCubeLod(texEnvironment, samplerId, float3(-r.x, r.y, -r.z), lod).rgb;
+        float2 brdf = textureBindless2DLod(texBRDF, samplerId, float2(NdotV, roughness), 0).rg;
+        result.indirectSpecular = pbrIndirectSpecular(f0, brdf, radiance);
+    }
     return result;
 }
