@@ -1,4 +1,5 @@
 #include "Bindless.slang"
+#include "ColorSpace.slang"
 
 static const int ToneMappingMode_None = 0;
 static const int ToneMappingMode_Reinhard = 1;
@@ -27,6 +28,7 @@ struct PushConstants
 
     float startCompression;
     float desaturation;
+    uint encodeSRGB;
 };
 [[vk::push_constant]] ConstantBuffer<PushConstants> pc;
 
@@ -120,7 +122,11 @@ struct FragmentOutput
         color = PBRNeutralToneMapping(pc.exposure * color, pc.startCompression, pc.desaturation);
     }
 
-    output.out_FragColor = float4(color + pc.bloomStrength * bloom, 1.0);
+    color += pc.bloomStrength * bloom;
+    // sRGB attachments encode automatically; SDR UNORM attachments require explicit encoding.
+    if (pc.encodeSRGB != 0)
+        color = linearToSRGB(color);
+    output.out_FragColor = float4(color, 1.0);
 
     return output;
 }
