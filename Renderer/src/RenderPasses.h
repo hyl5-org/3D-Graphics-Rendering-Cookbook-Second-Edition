@@ -75,6 +75,7 @@ struct LightingPassPushConstants
     uint32_t texSkybox;
     uint32_t texBRDF_LUT;
     uint32_t texRTShadowAO;
+    uint32_t rtReflectionTex;
     uint32_t sampler;
     uint64_t bufferLight;
 };
@@ -185,6 +186,55 @@ struct RTShadowAOPass
     lvk::Dimensions halfRes = {};
 };
 
+struct RTReflectionPassPushConstant
+{
+    mat4 invViewProj; // cliptoworld
+    vec4 cameraPos; // cliptoworld
+    uint32_t gbuffer1; // normal
+    uint32_t depth; // depth
+    uint32_t smpl;
+    uint32_t texBlueNoise;
+    //uint64_t perFrame;
+    uint64_t materials;
+    uint64_t indices;
+    uint64_t verticesPosition;
+    uint64_t verticesAttributes;
+    uint64_t meshes;
+    uint32_t outTexture;
+    uint32_t envTex;
+    uint32_t texSkyboxIrradiance;
+    uint32_t texBRDF_LUT;
+    uint32_t tlas;
+    uint32_t enableShadows;
+    uint32_t maxDepth;
+    uint64_t bufferLight;
+};
+static_assert(offsetof(RTReflectionPassPushConstant, meshes) == 128);
+static_assert(offsetof(RTReflectionPassPushConstant, bufferLight) == 168);
+
+
+struct RTReflectionPass 
+{
+    RTReflectionPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets,
+                     lvk::Format swapchainFormat);
+    lvk::TextureHandle execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf, const FrameTargets &targets,
+                 const ShadowPass &shadows, const RayTracingScene &rt, const mat4 &view, const mat4 &proj,
+                 lvk::SamplerHandle samplerClamp, uint32_t blueNoise, vec3 cameraPos, const Skybox &skyBox, uint64_t ib,
+                 uint64_t vbp, uint64_t vba, uint64_t mat);
+    lvk::TextureHandle denoise(lvk::ICommandBuffer &buf, const FrameTargets &targets, const mat4 &view,
+                               const mat4 &proj, lvk::SamplerHandle samplerClamp);
+    lvk::Dimensions res;
+    
+    lvk::Holder<lvk::ShaderModuleHandle> rgs;
+    lvk::Holder<lvk::ShaderModuleHandle> ms;
+    lvk::Holder<lvk::ShaderModuleHandle> msShadow;
+    lvk::Holder<lvk::ShaderModuleHandle> chs;
+    lvk::Holder<lvk::ShaderModuleHandle> ahsFoliage;
+    lvk::Holder<lvk::ShaderModuleHandle> ahsTransparent;
+    lvk::Holder<lvk::RayTracingPipelineHandle> rtReflPipe;
+    lvk::Holder<lvk::TextureHandle> rtReflecTex;
+};
+ 
 struct LightingPass
 {
     LightingPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets,
@@ -192,7 +242,7 @@ struct LightingPass
     lvk::TextureHandle execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                                const FrameTargets &targets, const Skybox &skyBox, const ShadowPass &shadows,
                                const mat4 &view, const mat4 &proj, lvk::SamplerHandle samplerClamp,
-                               lvk::TextureHandle rtShadowAO);
+                               lvk::TextureHandle rtShadowAO,lvk::TextureHandle rtReflectionTex);
 
     lvk::Holder<lvk::ShaderModuleHandle> vert;
     lvk::Holder<lvk::ShaderModuleHandle> frag;

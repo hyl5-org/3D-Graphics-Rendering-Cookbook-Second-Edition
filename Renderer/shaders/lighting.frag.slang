@@ -1,5 +1,6 @@
+#include "Math.slang"
 #include "Bindless.slang"
-#include "PBR.slang"
+#include "Lighting.slang"
 
 #include "Shadows.slang"
 
@@ -33,33 +34,11 @@ struct PushConstants
     uint texSkybox;
     uint texBRDF_LUT;
     uint texRTShadowAO;
+    uint rtReflectionTex;
     uint smpl;
     LightBuffer light;
 };
 [[vk::push_constant]] ConstantBuffer<PushConstants> pc;
-
-half2 signNotZero16(half2 v)
-{
-    return half2(v.x >= half(0.0) ? half(1.0) : half(-1.0), v.y >= half(0.0) ? half(1.0) : half(-1.0));
-}
-
-float3 decodeOctahedron(float2 e)
-{
-    half2 f = half2(e) * half(2.0) - half(1.0);
-    half3 n = half3(f.x, f.y, half(1.0) - abs(f.x) - abs(f.y));
-    if (n.z < half(0.0))
-    {
-        n.xy = (half(1.0) - abs(n.yx)) * signNotZero16(n.xy);
-    }
-    return normalize(float3(n));
-}
-
-float3 reconstructWorldPosition(float2 uv, float depth)
-{
-    float2 ndc = uv * float2(2.0, -2.0) + float2(-1.0, 1.0);
-    float4 world = mul(pc.invViewProj, float4(ndc, depth, 1.0));
-    return world.xyz / world.w;
-}
 
 struct FragmentInput
 {
@@ -90,7 +69,7 @@ struct FragmentOutput
 
     half3 baseColor = g3.rgb;
 
-    float3 worldPos = reconstructWorldPosition(input.uv, depth);
+    float3 worldPos = reconstructWorldPosition(input.uv, depth, pc.invViewProj);
     float shadowVisibility = 1.0;
     float ao = float(g3.a);
     float4 shadowCoords = mul(pc.light->viewProjBias, float4(worldPos, 1.0));
@@ -120,21 +99,14 @@ struct FragmentOutput
     float metallic = saturate(g2.x);
     float roughness = saturate(g2.z);
 
-    float3 sky = float3(-n.x, n.y, -n.z);
-    half3 ibl = half3(textureBindlessCube(pc.texSkyboxIrradiance, 0, sky).rgb);
-
-    float NdotV = saturate(dot(n, v));
-    float3 f0 = pbrF0(float3(baseColor), metallic);
-    float3 F = pbrFresnel(f0, NdotV);
-    float3 indirectDiffuse = pbrIndirectDiffuse(float3(baseColor), metallic, F, float3(ibl), ao);
-    // The renderer currently uses a white directional light with unit radiance.
-    float3 direct = pbrMetallicRoughness(float3(baseColor), metallic, roughness, n, v, l) * shadowVisibility;
-    float3 r = reflect(-v, n);
-    float lod = roughness * textureBindlessCubeMaxLod(pc.texSkybox);
-    float3 radiance = textureBindlessCubeLod(pc.texSkybox, pc.smpl, float3(-r.x, r.y, -r.z), lod).rgb;
-    float2 brdf = textureBindless2DLod(pc.texBRDF_LUT, pc.smpl, float2(NdotV, roughness), 0).rg;
-    float3 reflection = pbrIndirectSpecular(f0, brdf, radiance);
-    float3 color = float3(scene) + indirectDiffuse + direct + reflection;
+    PBRLighting lighting = evaluatePBRLighting(float3(baseColor), metallic, roughness, n, v, l,
+                                               shadowVisibility, ao, pc.texSkyboxIrradiance,
+                                               pc.texSkybox, pc.texBRDF_LUT, pc.smpl);
+    // RT is currently an ideal-mirror sample, weighted once with the receiving surface's Fresnel.
+    // Replace environment specular instead of adding a second copy of the reflected environment.
+    if (pc.rtReflectionTex != 0)
+        lighting.indirectSpecular = lighting.fresnel * textureBindless2D(pc.rtReflectionTex, pc.smpl, input.uv).rgb;
+    float3 color = float3(scene) + lighting.total();
     output.out_FragColor = float4(float3(color), 1.0);
 
     return output;

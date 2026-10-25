@@ -1,5 +1,75 @@
 #pragma once
+
 static const float M_PI = 3.141592653589793;
+
+float2 signNotZero(float2 v)
+{
+    return float2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
+}
+
+half2 signNotZero16(half2 v)
+{
+    return half2(v.x >= half(0.0) ? half(1.0) : half(-1.0), v.y >= half(0.0) ? half(1.0) : half(-1.0));
+}
+
+float3 unpackSnorm10x3(uint packed)
+{
+    int3 v = int3(packed, packed >> 10, packed >> 20);
+    v = (v << 22) >> 22;
+    return max(float3(v) / 511.0, float3(-1.0));
+}
+
+float2 encodeOctahedron(float3 n)
+{
+    n /= abs(n.x) + abs(n.y) + abs(n.z);
+    float2 p = n.xy;
+    if (n.z < 0.0)
+    {
+        p = (1.0 - abs(p.yx)) * signNotZero(p);
+    }
+    return p * 0.5 + 0.5;
+}
+
+half3 decodeOctahedron16(half2 e)
+{
+    half2 f = e * half(2.0) - half(1.0);
+    half3 n = half3(f.x, f.y, half(1.0) - abs(f.x) - abs(f.y));
+    if (n.z < half(0.0))
+    {
+        n.xy = (half(1.0) - abs(n.yx)) * signNotZero16(n.xy);
+    }
+    return normalize(n);
+}
+
+float3 decodeOctahedron(float2 e)
+{
+    half2 f = half2(e) * half(2.0) - half(1.0);
+    half3 n = half3(f.x, f.y, half(1.0) - abs(f.x) - abs(f.y));
+    if (n.z < half(0.0))
+    {
+        n.xy = (half(1.0) - abs(n.yx)) * signNotZero16(n.xy);
+    }
+    return normalize(float3(n));
+}
+
+float3 reconstructWorldPosition(float2 uv, float depth, float4x4 invViewProj)
+{
+    float2 ndc = uv * float2(2.0, -2.0) + float2(-1.0, 1.0);
+    float4 world = mul(invViewProj, float4(ndc, depth, 1.0));
+    return world.xyz / world.w;
+}
+
+float2 reprojectToPrevUV(float3 worldPos, float4x4 prevViewProj)
+{
+    float4 prevClip = mul(prevViewProj, float4(worldPos, 1.0));
+    float2 prevNDC = prevClip.xy / prevClip.w;
+    return prevNDC * float2(0.5, -0.5) + float2(0.5, 0.5);
+}
+
+float3 fresnelSchlickRoughness(float cosTheta, float3 F0, float roughness)
+{
+    return F0 + (max(float3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
 
 float pow2(float x)
 {
@@ -32,15 +102,6 @@ float4 cosineSampleHemisphere(float2 e)
     float pdf = cosTheta * (1.0 / M_PI);
 
     return float4(h, pdf);
-}
-
-float2 blueNoiseVec2(uint texBlueNoise, uint smpl, float2 screenCoord, uint frameIndex)
-{
-    uint2 wrappedXY = uint2(screenCoord) & uint2(127);
-    uint wrappedZ = frameIndex & 63u;
-    float2 uv =
-        (float2(float(wrappedXY.x), float(wrappedZ * 128u + wrappedXY.y)) + float2(0.5)) / float2(128.0, 8192.0);
-    return textureBindless2D(texBlueNoise, smpl, uv).rg;
 }
 
 float4 uniformSampleConeRobust(float2 e, float sinThetaMax2)

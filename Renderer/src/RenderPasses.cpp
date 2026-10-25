@@ -354,6 +354,91 @@ lvk::TextureHandle RTShadowAOPass::denoise(lvk::ICommandBuffer &buf, const Frame
     return lvk::TextureHandle(rtResult);
 }
 
+RTReflectionPass::RTReflectionPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets,
+                               lvk::Format swapchainFormat)
+{
+    uint32_t rtDownsampleScale = 2;
+
+    rgs = loadRendererShader(ctx, "rtReflection.slang", "rayGenMain");
+    ms = loadRendererShader(ctx, "rtReflection.slang", "missMain");
+    msShadow = loadRendererShader(ctx, "rtReflection.slang", "missMainShadow");
+    chs = loadRendererShader(ctx, "rtReflection.slang", "closestHitMain");
+    if (!rgs.valid() || !ms.valid() || !msShadow.valid() || !chs.valid())
+    {
+        return;
+    }
+
+  rtReflPipe = ctx->createRayTracingPipeline(lvk::RayTracingPipelineDesc{
+        .smRayGen = {lvk::ShaderModuleHandle(rgs)},
+        .smMiss =
+            {
+                lvk::ShaderModuleHandle(ms),
+                lvk::ShaderModuleHandle(msShadow),
+            },
+        .hitGroups = {{.smClosestHit = chs}},
+    });
+    const lvk::Dimensions Res = {.width = targets.sizeFb.width / rtDownsampleScale,
+                                 .height = targets.sizeFb.height / rtDownsampleScale};
+  rtReflecTex = ctx->createTexture({
+        .format = lvk::Format_B10G11R11_UF,
+        .dimensions = Res,
+        .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
+        .debugName = "RT Shadow/AO",
+    });
+
+    // Denoise textures
+    res = Res;
+}
+
+lvk::TextureHandle RTReflectionPass::execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
+                             const FrameTargets &targets, const ShadowPass &shadows, const RayTracingScene &rt,
+                               const mat4 &view, const mat4 &proj, lvk::SamplerHandle samplerClamp, uint32_t blueNoise,
+                               vec3 cameraPos, const Skybox &skyBox, uint64_t ib, uint64_t vbp, uint64_t vba, uint64_t mat)
+{
+    if (!rt.valid() || !rtReflPipe.valid() || !rtReflecTex.valid() || !rt.meshDataBuffer.valid())
+    {
+        return {};
+    }
+
+    buf.cmdPushDebugGroupLabel("RT Reflection", 0xff4040ff);
+        // Pass 1: ray-trace the scene
+    {
+        RTReflectionPassPushConstant pc = {
+            .invViewProj = glm::inverse(proj * view),
+            .cameraPos = vec4(cameraPos, 1.0f),
+            .gbuffer1 = targets.gbufferRT1.index(),
+            .depth = targets.opaqueDepth.index(),
+            .smpl = samplerClamp.index(),
+            .texBlueNoise = blueNoise,
+            .materials = mat,
+            .indices = ib,
+            .verticesPosition = vbp,
+            .verticesAttributes = vba,
+            .meshes = ctx->gpuAddress(rt.meshDataBuffer),
+            .outTexture = rtReflecTex.index(),
+            .envTex = skyBox.texSkybox.index(),
+            .texSkyboxIrradiance = skyBox.texSkyboxIrradiance.index(),
+            .texBRDF_LUT = skyBox.texBRDF_LUT.index(),
+            .tlas = rt.tlas.index(),
+            .enableShadows = 1u, // enableShadows_ ? 1u : 0u,
+            .maxDepth = 32,
+            .bufferLight = ctx->gpuAddress(shadows.lightBuffer),
+        };
+                         
+        buf.cmdBindRayTracingPipeline(rtReflPipe);
+        buf.cmdPushConstants(pc);
+        buf.cmdTraceRays(res.width, res.height, res.depth, {
+            .sampledImages = {targets.gbufferRT1, targets.opaqueDepth, skyBox.texSkybox,
+                              skyBox.texSkyboxIrradiance, skyBox.texBRDF_LUT, shadows.map},
+            .storageImages = {rtReflecTex},
+            .buffers = {shadows.lightBuffer, rt.meshDataBuffer}});
+        buf.cmdPopDebugGroupLabel();
+
+    }
+    return lvk::TextureHandle(rtReflecTex);
+}
+
+
 OITPass::OITPass(const std::unique_ptr<lvk::IContext> &ctx, const lvk::Dimensions &sizeFb)
 {
     vert = loadRendererShader(ctx, "QuadFlip.vert.slang");
@@ -535,7 +620,7 @@ LightingPass::LightingPass(const std::unique_ptr<lvk::IContext> &ctx, const Fram
 lvk::TextureHandle LightingPass::execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                                          const FrameTargets &targets, const Skybox &skyBox, const ShadowPass &shadows,
                                          const mat4 &view, const mat4 &proj, lvk::SamplerHandle samplerClamp,
-                                         lvk::TextureHandle rtShadowAO)
+                                         lvk::TextureHandle rtShadowAO, lvk::TextureHandle rtReflectionTex)
 {
     const lvk::Framebuffer framebufferMain = {
         .color = {{.texture = targets.lightingColor}},
@@ -552,6 +637,7 @@ lvk::TextureHandle LightingPass::execute(const std::unique_ptr<lvk::IContext> &c
     pc.texSkybox = skyBox.texSkybox.index();
     pc.texBRDF_LUT = skyBox.texBRDF_LUT.index();
     pc.texRTShadowAO = rtShadowAO.valid() ? rtShadowAO.index() : 0;
+    pc.rtReflectionTex = rtReflectionTex.valid() ? rtReflectionTex.index() : 0;
     pc.sampler = samplerClamp.index();
     pc.bufferLight = ctx->gpuAddress(shadows.lightBuffer);
 
@@ -570,6 +656,7 @@ lvk::TextureHandle LightingPass::execute(const std::unique_ptr<lvk::IContext> &c
                                    lvk::TextureHandle(skyBox.texSkybox),
                                    lvk::TextureHandle(skyBox.texBRDF_LUT),
                                    lvk::TextureHandle(shadows.map),
+                                   lvk::TextureHandle(rtReflectionTex),
                                    rtShadowAO,
                                },
                            .buffers = {lvk::BufferHandle(shadows.lightBuffer)}});

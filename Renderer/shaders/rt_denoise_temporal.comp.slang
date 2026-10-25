@@ -1,3 +1,4 @@
+#include "Math.slang"
 #define RENDERER_COMPUTE 1
 #include "Bindless.slang"
 
@@ -17,20 +18,6 @@ struct PushConstants
     float depthThreshold;
 };
 [[vk::push_constant]] ConstantBuffer<PushConstants> pc;
-
-float3 reconstructWorldPosition(float2 uv, float depth)
-{
-    float2 ndc = uv * float2(2.0, -2.0) + float2(-1.0, 1.0);
-    float4 world = mul(pc.invViewProj, float4(ndc, depth, 1.0));
-    return world.xyz / world.w;
-}
-
-float2 reprojectToPrevUV(float3 worldPos)
-{
-    float4 prevClip = mul(pc.prevViewProj, float4(worldPos, 1.0));
-    float2 prevNDC = prevClip.xy / prevClip.w;
-    return prevNDC * float2(0.5, -0.5) + float2(0.5, 0.5);
-}
 
 [shader("compute")][numthreads(16, 16, 1)] void main(uint3 dispatchId : SV_DispatchThreadID) {
     int2 size = textureBindlessSize2D(pc.texCurrent);
@@ -53,8 +40,8 @@ float2 reprojectToPrevUV(float3 worldPos)
         return;
     }
 
-    float3 worldPos = reconstructWorldPosition(uv, depth);
-    float2 prevUV = reprojectToPrevUV(worldPos);
+    float3 worldPos = reconstructWorldPosition(uv, depth, pc.invViewProj);
+    float2 prevUV = reprojectToPrevUV(worldPos, pc.prevViewProj);
 
     const float margin = 2.0 / float(size.x);
     bool valid = all((prevUV > float2(margin))) && all((prevUV < float2(1.0 - margin)));

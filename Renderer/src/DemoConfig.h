@@ -96,6 +96,7 @@ struct RayTracingSettings
     float aoPower = 1.0f;
     float shadowStrength = 0.5f;
     float shadowRadius = 0.02f;
+    bool reflection = false;
 };
 
 struct OITSettings

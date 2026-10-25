@@ -14,10 +14,20 @@
 namespace FinalDemo
 {
 
+struct RayTracingMeshData
+{
+    uint32_t indexOffset;
+    uint32_t vertexOffset;
+    uint32_t materialId;
+    uint32_t padding = 0;
+};
+static_assert(sizeof(RayTracingMeshData) == 16);
+
 struct RayTracingScene
 {
     lvk::Holder<lvk::BufferHandle> blasTransformBuffer;
     lvk::Holder<lvk::BufferHandle> instancesBuffer;
+    lvk::Holder<lvk::BufferHandle> meshDataBuffer;
     std::vector<lvk::Holder<lvk::AccelStructHandle>> blas;
     lvk::Holder<lvk::AccelStructHandle> tlas;
 
@@ -161,7 +171,14 @@ inline RayTracingScene createRayTracingScene(const std::unique_ptr<lvk::IContext
 
     std::vector<lvk::AccelStructInstance> instances;
     instances.reserve(scene.meshForNode.size());
-    uint32_t instanceIndex = 0;
+    std::vector<RayTracingMeshData> shaderMeshes(meshData.meshes.size());
+    for (size_t i = 0; i != meshData.meshes.size(); ++i)
+    {
+        const Mesh &mesh = meshData.meshes[i];
+        shaderMeshes[i] = {.indexOffset = mesh.indexOffset,
+                           .vertexOffset = mesh.vertexOffset,
+                           .materialId = mesh.materialID};
+    }
     for (const auto &nodeMesh : scene.meshForNode)
     {
         const uint32_t nodeIndex = nodeMesh.first;
@@ -173,7 +190,7 @@ inline RayTracingScene createRayTracingScene(const std::unique_ptr<lvk::IContext
 
         instances.push_back({
             .transform = toAccelTransform(scene.globalTransform[nodeIndex]),
-            .instanceCustomIndex = instanceIndex++,
+            .instanceCustomIndex = meshIndex,
             .mask = 0xff,
             .instanceShaderBindingTableRecordOffset = 0,
             .flags = lvk::AccelStructInstanceFlagBits_TriangleFacingCullDisable,
@@ -185,6 +202,14 @@ inline RayTracingScene createRayTracingScene(const std::unique_ptr<lvk::IContext
     {
         return rt;
     }
+
+    rt.meshDataBuffer = ctx->createBuffer({
+        .usage = lvk::BufferUsageBits_Storage,
+        .storage = lvk::StorageType_Device,
+        .size = shaderMeshes.size() * sizeof(RayTracingMeshData),
+        .data = shaderMeshes.data(),
+        .debugName = "Buffer: RT mesh data",
+    });
 
     rt.instancesBuffer = ctx->createBuffer({
         .usage = lvk::BufferUsageBits_AccelStructBuildInputReadOnly,

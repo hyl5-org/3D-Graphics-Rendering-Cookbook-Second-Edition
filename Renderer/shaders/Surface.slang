@@ -1,6 +1,6 @@
 #pragma once
 
-static const float M_PI = 3.141592653589793;
+#include "Math.slang"
 
 float4 SRGBtoLINEAR(float4 srgbIn)
 {

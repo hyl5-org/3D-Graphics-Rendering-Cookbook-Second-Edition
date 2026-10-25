@@ -66,3 +66,8 @@ struct MetallicRoughnessDataGPU
     float ior;
     uint padding[2];
 };
+
+struct Materials
+{
+    MetallicRoughnessDataGPU mtl[];
+};

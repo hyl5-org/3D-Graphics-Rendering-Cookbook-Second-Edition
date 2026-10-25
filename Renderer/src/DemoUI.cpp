@@ -141,6 +141,7 @@ void drawControls(uint32_t width, uint32_t height, float aspectRatio, SceneCulli
         ImGui::SliderInt("RTAO samples", &gSettings.rayTracing.aoSamples, 1, 16);
         ImGui::SliderFloat("RTAO radius", &gSettings.rayTracing.aoRadius, 0.01f, 10.0f);
         ImGui::SliderFloat("RTAO power", &gSettings.rayTracing.aoPower, 0.1f, 4.0f);
+        ImGui::Checkbox("RTReflection", &gSettings.rayTracing.reflection);
         // ImGui::Separator();
         // ImGui::Text("RTX OMM SDK: %s", ommSdkStatusText(ommStatus));
         // if (ommStatus.compiled)

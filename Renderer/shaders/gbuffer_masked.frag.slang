@@ -1,23 +1,8 @@
+#include "Math.slang"
 #include "Bindless.slang"
 
 #include "Mesh.slang"
 #include "Surface.slang"
-
-float2 signNotZero(float2 v)
-{
-    return float2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
-}
-
-float2 encodeOctahedron(float3 n)
-{
-    n /= abs(n.x) + abs(n.y) + abs(n.z);
-    float2 p = n.xy;
-    if (n.z < 0.0)
-    {
-        p = (1.0 - abs(p.yx)) * signNotZero(p);
-    }
-    return p * 0.5 + 0.5;
-}
 
 struct FragmentInput
 {

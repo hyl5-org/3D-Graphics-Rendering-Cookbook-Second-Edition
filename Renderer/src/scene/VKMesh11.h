@@ -6,6 +6,7 @@
 #include "scene/MeshUtils.h"
 
 #include <cstring>
+#include <tuple>
 #include <utility>
 
 class VKIndirectBuffer11 final
@@ -334,7 +335,10 @@ class VKMesh11
             buf.cmdBindVertexBuffer(1, bufferAttributes_);
         }
     }
-
+    std::tuple<uint64_t, uint64_t, uint64_t> getRayTracingBuffers() const
+    {
+        return {ctx->gpuAddress(bufferIndices_), ctx->gpuAddress(bufferPositions_), ctx->gpuAddress(bufferAttributes_)};
+    }
   public:
     const std::unique_ptr<lvk::IContext> &ctx;
 

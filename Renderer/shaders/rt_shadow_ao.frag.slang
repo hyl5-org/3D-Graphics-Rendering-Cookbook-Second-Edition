@@ -32,29 +32,6 @@ struct PushConstants
 };
 [[vk::push_constant]] ConstantBuffer<PushConstants> pc;
 
-half2 signNotZero16(half2 v)
-{
-    return half2(v.x >= half(0.0) ? half(1.0) : half(-1.0), v.y >= half(0.0) ? half(1.0) : half(-1.0));
-}
-
-half3 decodeOctahedron16(half2 e)
-{
-    half2 f = e * half(2.0) - half(1.0);
-    half3 n = half3(f.x, f.y, half(1.0) - abs(f.x) - abs(f.y));
-    if (n.z < half(0.0))
-    {
-        n.xy = (half(1.0) - abs(n.yx)) * signNotZero16(n.xy);
-    }
-    return normalize(n);
-}
-
-float3 reconstructWorldPosition(float2 uv, float depth)
-{
-    float2 ndc = uv * float2(2.0, -2.0) + float2(-1.0, 1.0);
-    float4 world = mul(pc.invViewProj, float4(ndc, depth, 1.0));
-    return world.xyz / world.w;
-}
-
 half traceRTAO16(float3 p, half3 n, float2 pixel)
 {
     float3x3 basis = getTangentBasis(n);
@@ -100,7 +77,7 @@ struct FragmentOutput
 
     half4 g1 = half4(textureBindless2D(pc.gbuffer1, pc.smpl, input.uv));
     half3 n = decodeOctahedron16(g1.xy);
-    float3 worldPos = reconstructWorldPosition(input.uv, d);
+    float3 worldPos = reconstructWorldPosition(input.uv, d, pc.invViewProj);
 
     half shadow = half(1.0);
     half ao = half(1.0);
