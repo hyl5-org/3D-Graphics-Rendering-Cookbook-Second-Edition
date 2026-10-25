@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <execution>
 #include <filesystem>
+#include <numeric>
 #include <sstream>
 #include <thread>
 
@@ -89,8 +90,8 @@ std::string fixTextureFile(const std::string &file)
 }
 
 std::string convertTexture(const std::string &file, const std::string &basePath,
-                           std::unordered_map<std::string, uint32_t> &opacityMapIndices,
-                           const std::vector<std::string> &opacityMaps)
+                           const std::unordered_map<std::string, uint32_t> &opacityMapIndices,
+                           const std::vector<std::string> &opacityMaps, bool sRGB)
 {
     LVK_PROFILER_FUNCTION();
 
@@ -107,7 +108,8 @@ std::string convertTexture(const std::string &file, const std::string &basePath,
     const std::string srcFile = replaceAll(basePath + file, "\\", "/");
     const std::string newFile = std::string(DEMO_TEXTURE_CACHE_FOLDER) +
                                 lowercaseString(replaceAll(replaceAll(srcFile, "..", "__"), "/", "__") +
-                                                std::string(DEMO_TEXTURE_CACHE_SUFFIX)) +
+                                                std::string(DEMO_TEXTURE_CACHE_SUFFIX) +
+                                                (sRGB ? "_srgb_v2" : "_linear_v2")) +
                                 std::string(".ktx");
 
     // load this image
@@ -141,7 +143,7 @@ std::string convertTexture(const std::string &file, const std::string &basePath,
 
     if (opacityMapIndices.count(file) > 0)
     {
-        const std::string opacityMapFile = replaceAll(basePath + opacityMaps[opacityMapIndices[file]], "\\", "/");
+        const std::string opacityMapFile = replaceAll(basePath + opacityMaps[opacityMapIndices.at(file)], "\\", "/");
         int opacityWidth, opacityHeight;
         stbi_uc *opacityPixels =
             stbi_load(fixTextureFile(opacityMapFile).c_str(), &opacityWidth, &opacityHeight, nullptr, 1);
@@ -179,8 +181,8 @@ std::string convertTexture(const std::string &file, const std::string &basePath,
 
     // create a KTX2 texture for RGBA data
     ktxTextureCreateInfo createInfoKTX2 = {
-        .glInternalformat = GL_RGBA8,
-        .vkFormat = VK_FORMAT_R8G8B8A8_UNORM,
+        .glInternalformat = static_cast<uint32_t>(sRGB ? GL_SRGB8_ALPHA8 : GL_RGBA8),
+        .vkFormat = static_cast<uint32_t>(sRGB ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM),
         .baseWidth = (uint32_t)newW,
         .baseHeight = (uint32_t)newH,
         .baseDepth = 1u,
@@ -203,8 +205,11 @@ std::string convertTexture(const std::string &file, const std::string &basePath,
         size_t offset = 0;
         ktxTexture_GetImageOffset(ktxTexture(textureKTX2), i, 0, 0, &offset);
 
-        stbir_resize_uint8_linear((const unsigned char *)src, origWidth, origHeight, 0,
-                                  ktxTexture_GetData(ktxTexture(textureKTX2)) + offset, w, h, 0, STBIR_RGBA);
+        uint8_t *dst = ktxTexture_GetData(ktxTexture(textureKTX2)) + offset;
+        if (sRGB)
+            stbir_resize_uint8_srgb(src, origWidth, origHeight, 0, dst, w, h, 0, STBIR_RGBA);
+        else
+            stbir_resize_uint8_linear(src, origWidth, origHeight, 0, dst, w, h, 0, STBIR_RGBA_NO_AW);
 
         h = h > 1 ? h >> 1 : 1;
         w = w > 1 ? w >> 1 : 1;
@@ -225,10 +230,22 @@ std::string convertTexture(const std::string &file, const std::string &basePath,
     (void)LVK_VERIFY(ktxTexture2_TranscodeBasis(textureKTX2, KTX_TTF_BC7_RGBA, 0) == KTX_SUCCESS);
 #endif
 
-    // convert to KTX1
+    // KTX1 records the transfer function in glInternalformat (vkFormat is a KTX2 field).
+    const uint32_t compressedFormat = [sRGB]() -> uint32_t
+    {
+        if (!sRGB)
+            return DEMO_TEXTURE_GL_INTERNAL_FORMAT;
+        switch (DEMO_TEXTURE_GL_INTERNAL_FORMAT)
+        {
+        case GL_COMPRESSED_RGBA_BPTC_UNORM: return GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM;
+        case GL_COMPRESSED_RGBA_ASTC_4x4_KHR: return GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR;
+        case GL_COMPRESSED_RGBA_ASTC_6x6_KHR: return GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6_KHR;
+        case GL_COMPRESSED_RGBA_ASTC_8x8_KHR: return GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x8_KHR;
+        default: assert(false); return DEMO_TEXTURE_GL_INTERNAL_FORMAT;
+        }
+    }();
     ktxTextureCreateInfo createInfoKTX1 = {
-        .glInternalformat = DEMO_TEXTURE_GL_INTERNAL_FORMAT,
-        .vkFormat = DEMO_TEXTURE_VK_FORMAT,
+        .glInternalformat = compressedFormat,
         .baseWidth = (uint32_t)newW,
         .baseHeight = (uint32_t)newH,
         .baseDepth = 1u,
@@ -260,9 +277,41 @@ std::string convertTexture(const std::string &file, const std::string &basePath,
     return newFile;
 }
 
-void convertAndDownscaleAllTextures(const std::vector<Material> &materials, const std::string &basePath,
+void convertAndDownscaleAllTextures(std::vector<Material> &materials, const std::string &basePath,
                                     std::vector<std::string> &files, std::vector<std::string> &opacityMaps)
 {
+    std::vector<uint8_t> linearUse(files.size(), 0);
+    std::vector<uint8_t> sRGB(files.size(), 0);
+    for (const Material &m : materials)
+        if (m.normalTexture >= 0)
+            linearUse.at(m.normalTexture) = 1;
+
+    // A source image may be used as both color and data: keep separate cached textures.
+    std::unordered_map<int, int> colorCopies;
+    auto markColor = [&](int &index)
+    {
+        if (index < 0)
+            return;
+        if (linearUse.at(index))
+        {
+            auto [it, inserted] = colorCopies.try_emplace(index, static_cast<int>(files.size()));
+            if (inserted)
+            {
+                const std::string source = files.at(index);
+                files.push_back(source);
+                sRGB.push_back(1);
+                linearUse.push_back(0);
+            }
+            index = it->second;
+        }
+        sRGB.at(index) = 1;
+    };
+    for (Material &m : materials)
+    {
+        markColor(m.baseColorTexture);
+        markColor(m.emissiveTexture);
+    }
+
     std::unordered_map<std::string, uint32_t> opacityMapIndices(files.size());
 
     for (const auto &m : materials)
@@ -273,15 +322,17 @@ void convertAndDownscaleAllTextures(const std::vector<Material> &materials, cons
         }
     }
 
-    auto converter = [&](const std::string &s) -> std::string
+    std::vector<size_t> indices(files.size());
+    std::iota(indices.begin(), indices.end(), size_t(0));
+    auto converter = [&](size_t index)
     {
-        return convertTexture(s, basePath, opacityMapIndices, opacityMaps);
+        files[index] = convertTexture(files[index], basePath, opacityMapIndices, opacityMaps, sRGB[index] != 0);
     };
 
 #if defined(__cpp_lib_execution)
-    std::transform(std::execution::par, std::begin(files), std::end(files), std::begin(files), converter);
+    std::for_each(std::execution::par, indices.begin(), indices.end(), converter);
 #else
-    std::transform(std::begin(files), std::end(files), std::begin(files), converter);
+    std::for_each(indices.begin(), indices.end(), converter);
 #endif
 }
 

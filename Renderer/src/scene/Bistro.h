@@ -19,8 +19,17 @@
 
 void loadBistro(MeshData &meshData, Scene &scene)
 {
-    if (!isMeshDataValid(fileNameCachedMeshes) || !isMeshHierarchyValid(fileNameCachedHierarchy) ||
-        !isMeshMaterialsValid(fileNameCachedMaterials))
+    bool cacheValid = isMeshDataValid(fileNameCachedMeshes) && isMeshHierarchyValid(fileNameCachedHierarchy) &&
+                      isMeshMaterialsValid(fileNameCachedMaterials);
+    if (cacheValid)
+    {
+        loadMeshDataMaterials(fileNameCachedMaterials, meshData);
+        for (const Material &m : meshData.materials)
+            for (int index : {m.baseColorTexture, m.emissiveTexture})
+                if (index >= 0 && !endsWith(meshData.textureFiles.at(index).c_str(), "_srgb_v2.ktx"))
+                    cacheValid = false;
+    }
+    if (!cacheValid)
     {
         LLOGL("No cached mesh data found. Precaching...\n\n");
 
