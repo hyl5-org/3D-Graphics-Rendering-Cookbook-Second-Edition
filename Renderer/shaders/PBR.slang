@@ -43,3 +43,10 @@ float3 pbrIndirectDiffuse(float3 baseColor, float metallic, float3 F, float3 dif
 {
     return (float3(1.0) - F) * (1.0 - saturate(metallic)) * baseColor * diffuseEnvironment * saturate(ao);
 }
+
+// Split-sum GGX IBL: the LUT integrates the BRDF, so do not multiply by Fresnel or NdotL again.
+// brdf.xy = scale/bias sampled at (NdotV, perceptual roughness).
+float3 pbrIndirectSpecular(float3 f0, float2 brdf, float3 prefilteredEnvironment)
+{
+    return prefilteredEnvironment * (f0 * brdf.x + float3(brdf.y));
+}

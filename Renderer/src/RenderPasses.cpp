@@ -553,12 +553,14 @@ lvk::TextureHandle LightingPass::execute(const std::unique_ptr<lvk::IContext> &c
     buf.cmdPushDebugGroupLabel("Lighting", 0xffff00ff);
     pc.invViewProj = glm::inverse(proj * view);
     pc.sceneColor = targets.sceneColor.index();
-    pc.cameraPos = glm::inverse(view)[3];
+    pc.cameraPos = vec3(glm::inverse(view)[3]);
     pc.gbuffer1 = targets.gbufferRT1.index();
     pc.gbuffer2 = targets.gbufferRT2.index();
     pc.gbuffer3 = targets.gbufferRT3.index();
     pc.depth = targets.opaqueDepth.index();
     pc.texSkyboxIrradiance = skyBox.texSkyboxIrradiance.index();
+    pc.texSkybox = skyBox.texSkybox.index();
+    pc.texBRDF_LUT = skyBox.texBRDF_LUT.index();
     pc.texRTShadowAO = rtShadowAO.valid() ? rtShadowAO.index() : 0;
     pc.sampler = samplerClamp.index();
     pc.bufferLight = ctx->gpuAddress(shadows.lightBuffer);
@@ -575,6 +577,8 @@ lvk::TextureHandle LightingPass::execute(const std::unique_ptr<lvk::IContext> &c
                                    lvk::TextureHandle(targets.gbufferRT3),
                                    lvk::TextureHandle(targets.opaqueDepth),
                                    lvk::TextureHandle(skyBox.texSkyboxIrradiance),
+                                   lvk::TextureHandle(skyBox.texSkybox),
+                                   lvk::TextureHandle(skyBox.texBRDF_LUT),
                                    lvk::TextureHandle(shadows.map),
                                    rtShadowAO,
                                },

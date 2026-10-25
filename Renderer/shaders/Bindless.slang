@@ -5,6 +5,25 @@
 [[vk::binding(1, 0)]] SamplerState kSamplers[];
 [[vk::binding(1, 0)]] SamplerComparisonState kShadowSamplers[];
 
+float4 textureBindless2DLod(uint textureId, uint samplerId, float2 uv, float lod)
+{
+    return kTextures2D[NonUniformResourceIndex(textureId)].SampleLevel(
+        kSamplers[NonUniformResourceIndex(samplerId)], uv, lod);
+}
+
+float4 textureBindlessCubeLod(uint textureId, uint samplerId, float3 direction, float lod)
+{
+    return kTexturesCube[NonUniformResourceIndex(textureId)].SampleLevel(
+        kSamplers[NonUniformResourceIndex(samplerId)], direction, lod);
+}
+
+float textureBindlessCubeMaxLod(uint textureId)
+{
+    uint width, height, levels;
+    kTexturesCube[NonUniformResourceIndex(textureId)].GetDimensions(0, width, height, levels);
+    return float(levels - 1);
+}
+
 float4 textureBindless2D(uint textureId, uint samplerId, float2 uv)
 {
 #ifdef RENDERER_COMPUTE
