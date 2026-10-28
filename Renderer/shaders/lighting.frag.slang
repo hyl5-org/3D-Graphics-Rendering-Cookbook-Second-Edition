@@ -18,6 +18,7 @@ struct LightBufferData
     float rtShadowStrength;
     float rtShadowRadius;
     uint frameIndex;
+    float environmentIntensity;
 };
 typealias LightBuffer = LightBufferData *;
 
@@ -101,7 +102,8 @@ struct FragmentOutput
 
     PBRLighting lighting = evaluatePBRLighting(float3(baseColor), metallic, roughness, n, v, l,
                                                shadowVisibility, ao, pc.texSkyboxIrradiance,
-                                               pc.texSkybox, pc.texBRDF_LUT, pc.smpl, pc.rtReflectionTex == 0);
+                                               pc.texSkybox, pc.texBRDF_LUT, pc.smpl, pc.rtReflectionTex == 0,
+                                               pc.light->lightDir.w, pc.light->environmentIntensity);
     // RT is currently an ideal-mirror sample, weighted once with the receiving surface's Fresnel.
     // Replace environment specular instead of adding a second copy of the reflected environment.
     if (pc.rtReflectionTex != 0)

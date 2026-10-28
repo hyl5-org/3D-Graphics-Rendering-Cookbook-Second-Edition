@@ -32,17 +32,19 @@ struct FragmentInput
         n = perturbNormal(n, input.worldPos, normalSample, input.uv);
     }
 
-    float NdotL = clamp(dot(n, -normalize(pc.light->lightDir.xyz)), 0.1, 1.0);
+    float NdotL = saturate(dot(n, -normalize(pc.light->lightDir.xyz)));
 
     const float4 f0 = float4(0.04);
     float3 sky = float3(-n.x, n.y, -n.z);
     float4 diffuse =
-        (textureBindlessCube(pc.texSkyboxIrradiance, 0, sky) + float4(NdotL)) * baseColor * (float4(1.0) - f0);
+        (textureBindlessCube(pc.texSkyboxIrradiance, 0, sky) * max(pc.light->environmentIntensity, 0.0)
+         + float4(NdotL * max(pc.light->lightDir.w, 0.0) / M_PI))
+        * baseColor * (float4(1.0) - f0);
 
     float3 v = normalize(pc.cameraPos.xyz - input.worldPos);
     float3 reflection = reflect(v, n);
     reflection = float3(reflection.x, -reflection.y, reflection.z);
-    float3 colorRefl = textureBindlessCube(pc.texSkybox, 0, reflection).rgb;
+    float3 colorRefl = textureBindlessCube(pc.texSkybox, 0, reflection).rgb * max(pc.light->environmentIntensity, 0.0);
     float3 kS = fresnelSchlickRoughness(clamp(dot(n, v), 0.0, 1.0), f0.rgb, 0.1);
     float3 color = emissiveColor.rgb + diffuse.rgb + colorRefl * kS;
 

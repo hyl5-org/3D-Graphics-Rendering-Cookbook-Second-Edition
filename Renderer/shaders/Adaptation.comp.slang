@@ -2,7 +2,7 @@
 #include "Bindless.slang"
 
 [[vk::binding(2, 0)]][format("r16f")] RWTexture2D<float> kTextures2DIn[];
-[[vk::binding(2, 0)]][format("r16f")] RWTexture2D<float> kTextures2DOut[];
+[[vk::binding(2, 0)]][format("r32f")] RWTexture2D<float> kTextures2DOut[];
 
 struct PushConstants
 {
@@ -15,8 +15,9 @@ struct PushConstants
 
 [shader("compute")][numthreads(1, 1, 1)] void main(uint3 dispatchId : SV_DispatchThreadID) {
     float lumCurr = float4(kTextures2DIn[pc.texCurrSceneLuminance][int2(0, 0)], 0, 0, 0).x;
-    float lumPrev = float4(kTextures2DIn[pc.texPrevAdaptedLuminance][int2(0, 0)], 0, 0, 0).x;
+    float lumPrev = float4(kTextures2DOut[pc.texPrevAdaptedLuminance][int2(0, 0)], 0, 0, 0).x;
 
+    lumCurr = exp2(lumCurr);
     float factor = 1.0 - exp(-pc.adaptationSpeed);
     float newAdaptation = lumPrev + (lumCurr - lumPrev) * factor;
 

@@ -2,6 +2,23 @@
 
 static const float M_PI = 3.141592653589793;
 
+// Ray Tracing Gems, chapter 6. n is the unit geometric normal facing the outgoing ray.
+float3 offsetRay(float3 p, float3 n)
+{
+    const float origin = 1.0 / 32.0;
+    const float floatScale = 1.0 / 65536.0;
+    const float intScale = 256.0;
+    int3 offset = int3(intScale * n);
+    float3 shifted = float3(
+        asfloat(asint(p.x) + (p.x < 0.0 ? -offset.x : offset.x)),
+        asfloat(asint(p.y) + (p.y < 0.0 ? -offset.y : offset.y)),
+        asfloat(asint(p.z) + (p.z < 0.0 ? -offset.z : offset.z)));
+    return float3(
+        abs(p.x) < origin ? p.x + floatScale * n.x : shifted.x,
+        abs(p.y) < origin ? p.y + floatScale * n.y : shifted.y,
+        abs(p.z) < origin ? p.z + floatScale * n.z : shifted.z);
+}
+
 float2 signNotZero(float2 v)
 {
     return float2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);

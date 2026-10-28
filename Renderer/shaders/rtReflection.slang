@@ -1,4 +1,4 @@
-[[vk::binding(4, 0)]] RaytracingAccelerationStructure kTLAS[128];
+[[vk::binding(4, 0)]] RaytracingAccelerationStructure kTLAS[];
 #include "Math.slang"
 #include "Material.slang"
 #include "Geometry.slang"
@@ -19,6 +19,7 @@ struct LightBufferData
     float rtShadowStrength;
     float rtShadowRadius;
     uint frameIndex;
+    float environmentIntensity;
 };
 typealias LightBuffer = LightBufferData *;
 
@@ -77,9 +78,11 @@ void rayGenMain()
     float3 worldPos = reconstructWorldPosition(sourceUV, depth, pc.invViewProj);
     float3 viewDir = normalize(pc.cameraPos.xyz - worldPos);
     RayDesc ray;
-    ray.Origin = worldPos + n * 0.001;
+    ray.Origin = worldPos + n * 0.01;
+    //ray.Origin = offsetRay(worldPos, geometricNormal);
+
     ray.Direction = reflect(-viewDir, n);
-    ray.TMin = 0.001;
+    ray.TMin = 0.01;
     ray.TMax = 1e6;
     RayPayload payload;
     payload.color = float3(0.0);
@@ -100,7 +103,8 @@ void missMain(inout RayPayload payload)
 {
     // Match the environment coordinate convention used by the renderer's skybox.
     float3 dir = WorldRayDirection();
-    payload.color = textureBindlessCubeLod(pc.envTex, 0, float3(-dir.x, dir.y, -dir.z), 0).rgb;
+    payload.color = textureBindlessCubeLod(pc.envTex, 0, float3(-dir.x, dir.y, -dir.z), 0).rgb
+                    * max(pc.light->environmentIntensity, 0.0);
     payload.depth = 0xff;
 }
 
@@ -154,6 +158,6 @@ void closestHitMain(inout RayPayload payload, in BuiltInTriangleIntersectionAttr
     // Reflected surfaces are currently shaded without shadow tests.
     PBRLighting lighting = evaluatePBRLighting(baseColor, metallic, roughness, N, V, L,
                                                1.0, 1.0, pc.texSkyboxIrradiance,
-                                               pc.envTex, pc.texBRDF_LUT, pc.smpl);
+                                               pc.envTex, pc.texBRDF_LUT, pc.smpl, true, pc.light->lightDir.w, pc.light->environmentIntensity);
     payload.color = emissive + lighting.total();
 }

@@ -1,5 +1,5 @@
-// Precompiled SPIR-V bypasses LVK's Adreno workaround for runtime-sized TLAS arrays.
-[[vk::binding(4, 0)]] RaytracingAccelerationStructure kTLAS[128];
+// Descriptor indices match acceleration-structure handles, including preceding BLAS slots.
+[[vk::binding(4, 0)]] RaytracingAccelerationStructure kTLAS[];
 #include "Bindless.slang"
 
 #include "Math.slang"
@@ -18,6 +18,7 @@ struct LightBufferData
     float rtShadowStrength;
     float rtShadowRadius;
     uint frameIndex;
+    float environmentIntensity;
 };
 typealias LightBuffer = LightBufferData *;
 
@@ -28,6 +29,7 @@ struct PushConstants
     uint depth;
     uint smpl;
     uint texBlueNoise;
+    uint tlas;
     LightBuffer light;
 };
 [[vk::push_constant]] ConstantBuffer<PushConstants> pc;
@@ -45,7 +47,7 @@ half traceRTAO16(float3 p, half3 n, float2 pixel)
         RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES>
             rq;
         RayDesc ray = {p + float3(n) * 0.03, 0.03, dir, pc.light->rtAORadius};
-        rq.TraceRayInline(kTLAS[0], RAY_FLAG_NONE, 0xff, ray);
+        rq.TraceRayInline(kTLAS[pc.tlas], RAY_FLAG_NONE, 0xff, ray);
         while (rq.Proceed())
         {
         }
@@ -95,7 +97,7 @@ struct FragmentOutput
                 rq;
 
             RayDesc ray = {worldPos + float3(n) * 0.03, 0.03, rayDir, 1e4};
-            rq.TraceRayInline(kTLAS[0], RAY_FLAG_NONE, 0xff, ray);
+            rq.TraceRayInline(kTLAS[pc.tlas], RAY_FLAG_NONE, 0xff, ray);
             while (rq.Proceed())
             {
             }

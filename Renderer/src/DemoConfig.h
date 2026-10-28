@@ -48,8 +48,8 @@ namespace FinalDemo
 {
 
 constexpr uint32_t kNumSamples = 1;
-constexpr lvk::Format kOffscreenFormat = lvk::Format_B10G11R11_UF;
-constexpr lvk::Format kHDRBloomFormat = lvk::Format_RGBA_F16;
+constexpr lvk::Format kOffscreenFormat = lvk::Format_RGBA_F32;
+constexpr lvk::Format kHDRBloomFormat = lvk::Format_RGBA_F32;
 constexpr lvk::Dimensions kBloomSize = {512, 512};
 constexpr uint32_t kHorizontal = 1;
 constexpr uint32_t kVertical = 0;
@@ -96,7 +96,7 @@ struct RayTracingSettings
     float aoPower = 1.0f;
     float shadowStrength = 0.5f;
     float shadowRadius = 0.02f;
-    bool reflection = false;
+    bool reflection = true;
 };
 
 struct OITSettings
@@ -123,6 +123,9 @@ struct CullingSettings
 
 struct LightParams
 {
+    float illuminanceLux = 100000.0f;
+    float environmentIntensity = 1.0f;
+    float environmentLuminance = 1000.0f; // cd/m^2 per unit HDR environment radiance; manual calibration
     float theta = +90.0f;
     float phi = -26.0f;
     float depthBiasConst = 1.1f;

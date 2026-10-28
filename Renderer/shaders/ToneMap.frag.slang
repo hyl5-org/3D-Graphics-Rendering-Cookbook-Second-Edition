@@ -1,5 +1,6 @@
 #include "Bindless.slang"
 #include "ColorSpace.slang"
+#include "Exposure.slang"
 
 static const int ToneMappingMode_None = 0;
 static const int ToneMappingMode_Reinhard = 1;
@@ -62,7 +63,7 @@ float3 reinhard2(float3 v, float maxWhite)
 {
     float l_old = luminance(v);
     float l_new = l_old * (1.0 + (l_old / (maxWhite * maxWhite))) / (1.0 + l_old);
-    return v * (l_new / l_old);
+    return v * (l_new / max(l_old, 0.0001));
 }
 
 float3 PBRNeutralToneMapping(float3 color, float startCompression, float desaturation)
@@ -100,29 +101,27 @@ struct FragmentOutput
     FragmentOutput output;
 
     float3 color = textureBindless2D(pc.texColor, pc.smpl, input.uv).rgb;
-    float3 bloom = textureBindless2D(pc.texBloom, pc.smpl, input.uv).rgb;
+    float3 bloom = float3(0.0);
+    if (pc.bloomStrength > 0.0)
+        bloom = textureBindless2D(pc.texBloom, pc.smpl, input.uv).rgb;
     float avgLuminance = textureBindless2D(pc.texLuminance, pc.smpl, float2(0.5)).r;
 
-    if (pc.drawMode != ToneMappingMode_None)
-    {
-        float midGray = 0.5;
-        color *= pc.exposure * midGray / (avgLuminance + 0.001);
-    }
+    float scale = pc.drawMode != ToneMappingMode_None ? exposureScale(avgLuminance, pc.exposure) : pc.exposure;
+    color = color * scale + pc.bloomStrength * bloom;
 
     if (pc.drawMode == ToneMappingMode_Reinhard)
     {
-        color = reinhard2(pc.exposure * color, pc.maxWhite);
+        color = reinhard2(color, pc.maxWhite);
     }
     if (pc.drawMode == ToneMappingMode_Uchimura)
     {
-        color = uchimura(pc.exposure * color, pc.P, pc.a, pc.m, pc.l, pc.c, pc.b);
+        color = uchimura(color, pc.P, pc.a, pc.m, pc.l, pc.c, pc.b);
     }
     if (pc.drawMode == ToneMappingMode_KhronosPBR)
     {
-        color = PBRNeutralToneMapping(pc.exposure * color, pc.startCompression, pc.desaturation);
+        color = PBRNeutralToneMapping(color, pc.startCompression, pc.desaturation);
     }
 
-    color += pc.bloomStrength * bloom;
     // sRGB attachments encode automatically; SDR UNORM attachments require explicit encoding.
     if (pc.encodeSRGB != 0)
         color = linearToSRGB(color);

@@ -4,6 +4,7 @@ struct PerFrameData
 {
     float4x4 mvp;
     uint texSkybox;
+    float environmentIntensity;
 };
 [[vk::push_constant]] ConstantBuffer<PerFrameData> pc;
 

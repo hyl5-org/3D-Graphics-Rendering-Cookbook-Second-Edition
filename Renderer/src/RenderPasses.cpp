@@ -77,7 +77,7 @@ void ShadowPass::updateIfNeeded(lvk::ICommandBuffer &buf, const VKMesh11 &mesh, 
     buf.cmdUpdateBuffer(lightBuffer,
                         LightData{
                             .viewProjBias = scaleBias * lightFrame.proj * lightFrame.view,
-                            .lightDir = vec4(lightFrame.dir, 0.0f),
+                            .lightDir = vec4(lightFrame.dir, gSettings.light.illuminanceLux),
                             .shadowTexture = map.index(),
                             .shadowSampler = sampler.index(),
                             .rtShadowEnabled = (mesh.rayTracing_.valid() && gSettings.rayTracing.shadows) ? 1u : 0u,
@@ -88,13 +88,14 @@ void ShadowPass::updateIfNeeded(lvk::ICommandBuffer &buf, const VKMesh11 &mesh, 
                             .rtShadowStrength = gSettings.rayTracing.shadowStrength,
                             .rtShadowRadius = gSettings.rayTracing.shadowRadius,
                             .frameIndex = frameIndex++,
+                            .environmentIntensity = gSettings.light.environmentIntensity * gSettings.light.environmentLuminance,
                         });
 }
 
 RTShadowAOPass::RTShadowAOPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets,
                                lvk::Format swapchainFormat)
 {
-    uint32_t rtDownsampleScale = 2;
+    uint32_t rtDownsampleScale = 1;
     vert = loadRendererShader(ctx, "QuadFlip.vert.slang");
     frag = loadRendererShader(ctx, "rt_shadow_ao.frag.slang");
     pipeline = ctx->createRenderPipeline({
@@ -202,6 +203,7 @@ void RTShadowAOPass::execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICo
         .depth = targets.opaqueDepth.index(),
         .smpl = samplerClamp.index(),
         .texBlueNoise = blueNoise.index(),
+        .tlas = rt.tlas.index(),
         .bufferLight = ctx->gpuAddress(shadows.lightBuffer),
     };
     buf.cmdBindRenderPipeline(pipeline);
@@ -357,7 +359,7 @@ lvk::TextureHandle RTShadowAOPass::denoise(lvk::ICommandBuffer &buf, const Frame
 RTReflectionPass::RTReflectionPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets,
                                lvk::Format swapchainFormat)
 {
-    uint32_t rtDownsampleScale = 2;
+    uint32_t rtDownsampleScale = 1;
 
     rgs = loadRendererShader(ctx, "rtReflection.slang", "rayGenMain");
     ms = loadRendererShader(ctx, "rtReflection.slang", "missMain");
@@ -381,7 +383,7 @@ RTReflectionPass::RTReflectionPass(const std::unique_ptr<lvk::IContext> &ctx, co
     const lvk::Dimensions Res = {.width = targets.sizeFb.width / rtDownsampleScale,
                                  .height = targets.sizeFb.height / rtDownsampleScale};
   rtReflecTex = ctx->createTexture({
-        .format = lvk::Format_B10G11R11_UF,
+        .format = lvk::Format_RGBA_F32,
         .dimensions = Res,
         .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
         .debugName = "RT Shadow/AO",
@@ -714,9 +716,9 @@ HDRPass::HDRPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &
             ctx->createTextureView(luminanceViews[0], {.mipLevel = v, .components = swizzle}, "texLumViews[]");
     }
 
-    const uint16_t brightPixel = glm::packHalf1x16(50.0f);
+    const float brightPixel = 50.0f;
     const lvk::TextureDesc luminanceTextureDesc{
-        .format = lvk::Format_R_F16,
+        .format = lvk::Format_R_F32,
         .dimensions = {1, 1},
         .usage = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
         .components = swizzle,
@@ -768,7 +770,10 @@ void HDRPass::execute(lvk::ICommandBuffer &buf, lvk::TextureHandle texColor, flo
                       lvk::SamplerHandle samplerClamp)
 {
     buf.cmdPushDebugGroupLabel("HDR", 0xffffff00);
+    currentColor = texColor;
     pc.texColor = texColor.index();
+    pc.texLuminance = adaptedLuminance[0].index();
+    pc.bloomStrength = gSettings.hdr.enableBloom ? gSettings.hdr.bloomStrength : 0.0f;
     const struct BrightPassPC
     {
         uint32_t texColor;
@@ -777,6 +782,8 @@ void HDRPass::execute(lvk::ICommandBuffer &buf, lvk::TextureHandle texColor, flo
         uint32_t sampler;
         float exposure;
         uint32_t enableBloom;
+        uint32_t texAdaptedLuminance;
+        uint32_t useAutoExposure;
     } pcBright = {
         .texColor = texColor.index(),
         .texOut = brightPass.index(),
@@ -784,12 +791,14 @@ void HDRPass::execute(lvk::ICommandBuffer &buf, lvk::TextureHandle texColor, flo
         .sampler = samplerClamp.index(),
         .exposure = pc.exposure,
         .enableBloom = gSettings.hdr.enableBloom ? 1u : 0u,
+        .texAdaptedLuminance = adaptedLuminance[0].index(),
+        .useAutoExposure = pc.drawMode != ToneMapping_None ? 1u : 0u,
     };
     buf.cmdPushDebugGroupLabel("HDR BrightPass", 0xffffff00);
     buf.cmdBindComputePipeline(pipelineBrightPass);
     buf.cmdPushConstants(pcBright);
     buf.cmdDispatch(kBloomSize.divide2D(16),
-                    {.sampledImages = {texColor},
+                    {.sampledImages = {texColor, lvk::TextureHandle(adaptedLuminance[0])},
                      .storageImages = {lvk::TextureHandle(brightPass), lvk::TextureHandle(luminanceViews[0])}});
     buf.cmdGenerateMipmap(luminanceViews[0]);
     buf.cmdPopDebugGroupLabel();
@@ -864,7 +873,9 @@ void HDRPass::toneMap(lvk::ICommandBuffer &buf, const lvk::Framebuffer &framebuf
 {
     buf.cmdPushDebugGroupLabel("ToneMap", 0xffff00ff);
     buf.cmdBeginRendering({.color = {{.loadOp = lvk::LoadOp_DontCare, .clearColor = {1.0f, 1.0f, 1.0f, 1.0f}}}},
-                          framebufferMain, {.sampledImages = {lvk::TextureHandle(adaptedLuminance[1])}});
+                          framebufferMain, {.sampledImages = {lvk::TextureHandle(adaptedLuminance[0]),
+                                                             currentColor,
+                                                             lvk::TextureHandle(bloomPass)}});
     buf.cmdBindRenderPipeline(pipelineToneMap);
     buf.cmdPushConstants(pc);
     buf.cmdBindDepthState({});
@@ -952,7 +963,7 @@ void renderSkyboxPass(lvk::ICommandBuffer &buf, const FrameTargets &targets, con
                         .depth = {.loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store}},
         framebufferSkybox,
         {.sampledImages = {lvk::TextureHandle(skyBox.texSkybox), lvk::TextureHandle(targets.opaqueDepth)}});
-    skyBox.draw(buf, view, proj);
+    skyBox.draw(buf, view, proj, gSettings.light.environmentIntensity * gSettings.light.environmentLuminance);
     buf.cmdEndRendering();
 }
 

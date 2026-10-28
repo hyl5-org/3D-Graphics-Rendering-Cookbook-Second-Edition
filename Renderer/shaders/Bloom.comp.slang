@@ -1,7 +1,7 @@
 #define RENDERER_COMPUTE 1
 #include "Bindless.slang"
 
-[[vk::binding(2, 0)]][format("rgba16f")] RWTexture2D<float4> kTextures2DOut[];
+[[vk::binding(2, 0)]][format("rgba32f")] RWTexture2D<float4> kTextures2DOut[];
 
 struct PushConstants
 {

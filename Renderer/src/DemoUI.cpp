@@ -89,6 +89,9 @@ void drawControls(uint32_t width, uint32_t height, float aspectRatio, SceneCulli
 
     if (ImGui::CollapsingHeader("Shadow Mapping"))
     {
+        ImGui::SliderFloat("Sun illuminance (lux)", &gSettings.light.illuminanceLux, 0.0f, 150000.0f, "%.0f lux");
+        ImGui::SliderFloat("Environment calibration (nits/unit)", &gSettings.light.environmentLuminance, 1.0f, 100000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Environment multiplier", &gSettings.light.environmentIntensity, 0.0f, 10.0f);
         ImGui::Text("Depth bias factor:");
         ImGui::Indent(indentSize);
         ImGui::SliderFloat("Constant", &gSettings.light.depthBiasConst, 0.0f, 5.0f);

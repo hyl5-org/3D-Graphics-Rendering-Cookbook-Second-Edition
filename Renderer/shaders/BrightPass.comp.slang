@@ -1,7 +1,8 @@
 #define RENDERER_COMPUTE 1
 #include "Bindless.slang"
+#include "Exposure.slang"
 
-[[vk::binding(2, 0)]][format("rgba16f")] RWTexture2D<float4> kTextures2DOutRGBA[];
+[[vk::binding(2, 0)]][format("rgba32f")] RWTexture2D<float4> kTextures2DOutRGBA[];
 [[vk::binding(2, 0)]][format("r16f")] RWTexture2D<float> kTextures2DOutR[];
 
 struct PushConstants
@@ -12,6 +13,8 @@ struct PushConstants
     uint smpl;
     float exposure;
     uint enableBloom;
+    uint texAdaptedLuminance;
+    uint useAutoExposure;
 };
 [[vk::push_constant]] ConstantBuffer<PushConstants> pc;
 
@@ -42,16 +45,21 @@ float4 textureBindless2D(uint textureid, float2 uv)
     {
         for (int u = 0; u != 3; u++)
         {
-            color += textureBindless2D(pc.texColor, uv0 + float2(u, v) * dxdy);
+            color += textureBindless2D(pc.texColor, uv0 + (float2(u, v) + 0.5) * dxdy);
         }
     }
 
-    float luminance = pc.exposure * dot(color.rgb / 9, float3(0.2126, 0.7152, 0.0722));
-
-    if (pc.enableBloom != 0)
-    {
-        float3 rgb = luminance > 1.0 ? color.rgb : float3(0);
-        kTextures2DOutRGBA[pc.texOut][int2(xy)] = (float4(rgb, 1.0));
-    }
-    kTextures2DOutR[pc.texLuminance][int2(xy)] = (float4(luminance)).x;
+    color /= 9.0;
+    float luminance = max(dot(color.rgb, float3(0.2126, 0.7152, 0.0722)), 0.0001);
+    float averageLuminance = textureBindless2D(pc.texAdaptedLuminance, float2(0.5)).r;
+    float scale = pc.useAutoExposure != 0 ? exposureScale(averageLuminance, pc.exposure) : pc.exposure;
+    float3 exposed = color.rgb * scale;
+    float exposedLuminance = luminance * scale;
+    // Soft knee around an exposure-relative threshold of 1.
+    float knee = clamp(exposedLuminance - 0.5, 0.0, 1.0);
+    float contribution = max(exposedLuminance - 1.0, knee * knee * 0.5);
+    float3 bright = exposed * (contribution / max(exposedLuminance, 0.0001));
+    kTextures2DOutRGBA[pc.texOut][int2(xy)] = float4(pc.enableBloom != 0 ? bright : float3(0.0), 1.0);
+    // Mip averaging in log space yields a geometric mean for exposure metering.
+    kTextures2DOutR[pc.texLuminance][int2(xy)] = log2(luminance);
 }

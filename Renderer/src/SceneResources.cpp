@@ -236,13 +236,13 @@ FrameTargets createGBufferTargets(const std::unique_ptr<lvk::IContext> &ctx, lvk
     return {
         .sizeFb = sizeFb,
         .sceneColor = ctx->createTexture({
-            .format = lvk::Format::Format_B10G11R11_UF,
+            .format = kOffscreenFormat,
             .dimensions = sizeFb,
             .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
             .debugName = "gbuffer0",
         }),
         .lightingColor = ctx->createTexture({
-            .format = lvk::Format::Format_B10G11R11_UF,
+            .format = kOffscreenFormat,
             .dimensions = sizeFb,
             .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
             .debugName = "lightingColor",

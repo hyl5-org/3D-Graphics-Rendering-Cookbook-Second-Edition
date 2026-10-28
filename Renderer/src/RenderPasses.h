@@ -14,7 +14,7 @@ namespace FinalDemo
 struct LightData
 {
     mat4 viewProjBias;
-    vec4 lightDir;
+    vec4 lightDir; // xyz: direction, w: perpendicular illuminance in lux
     uint32_t shadowTexture;
     uint32_t shadowSampler;
     uint32_t rtShadowEnabled;
@@ -25,6 +25,7 @@ struct LightData
     float rtShadowStrength;
     float rtShadowRadius;
     uint32_t frameIndex;
+    float environmentIntensity;
 };
 
 struct MeshPushConstants
@@ -90,7 +91,7 @@ struct HDRPushConstants
     uint32_t texLuminance;
     uint32_t texBloom;
     uint32_t sampler;
-    int drawMode = ToneMapping_Uchimura;
+    int drawMode = ToneMapping_KhronosPBR;
 
     float exposure = 0.95f;
     float bloomStrength = 0.0f;
@@ -148,8 +149,10 @@ struct RTShadowAOPushConstants
     uint32_t depth;
     uint32_t smpl;
     uint32_t texBlueNoise;
+    uint32_t tlas;
     uint64_t bufferLight;
 };
+static_assert(offsetof(RTShadowAOPushConstants, bufferLight) == 88);
 
 struct RTShadowAOPass
 {
@@ -296,6 +299,7 @@ struct SSAOPass
 
 struct HDRPass
 {
+    lvk::TextureHandle currentColor;
     lvk::Holder<lvk::TextureHandle> brightPass;
     lvk::Holder<lvk::TextureHandle> bloomPass;
     std::array<lvk::Holder<lvk::TextureHandle>, 2> bloom;

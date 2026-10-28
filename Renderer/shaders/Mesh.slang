@@ -35,6 +35,7 @@ struct LightBufferData
     float rtShadowStrength;
     float rtShadowRadius;
     uint frameIndex;
+    float environmentIntensity;
 };
 typealias LightBuffer = LightBufferData *;
 
