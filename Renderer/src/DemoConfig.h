@@ -123,6 +123,7 @@ struct CullingSettings
 
 struct LightParams
 {
+    bool shadowOcclusionCulling = true;
     float illuminanceLux = 100000.0f;
     float environmentIntensity = 1.0f;
     float environmentLuminance = 1000.0f; // cd/m^2 per unit HDR environment radiance; manual calibration

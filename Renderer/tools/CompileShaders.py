@@ -16,6 +16,8 @@ def main():
     stages = {"vert": "Vert", "frag": "Frag", "comp": "Comp"}
     jobs = [(source, "main", stages[source.name.split(".")[-2]], source.stem)
             for source in sorted(args.source_dir.glob("*.*.slang"))]
+    for name in ("reproject_light_tile_depth", "build_light_tile_depth_hierarchy", "shadow_occlusion_culling"):
+        jobs.append((args.source_dir / (name + ".slang"), "main", "Comp", name))
     source = args.source_dir / "rtReflection.slang"
     for entry_point, stage in (("rayGenMain", "RayGen"), ("missMain", "Miss"),
                                ("missMainShadow", "Miss"), ("closestHitMain", "ClosestHit")):

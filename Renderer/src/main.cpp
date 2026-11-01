@@ -93,13 +93,17 @@ VULKAN_APP_MAIN
 
                 LVK_PROFILER_ZONE("Shadow and draw stats", 0xff8080ff);
                 buf.cmdPushDebugGroupLabel("Shadow", 0xff8080ff);
-                shadows.updateIfNeeded(buf, mesh, pipelines, lightFrame);
+                shadows.updateLight(buf, mesh, lightFrame);
                 buf.cmdPopDebugGroupLabel();
                 LVK_PROFILER_ZONE_END();
 
                 LVK_PROFILER_ZONE("Geometry pass", LVK_PROFILER_COLOR_CMD_DRAW);
                 renderGbufferPass(ctx, app, buf, targets, loadedScene, skyBox, mesh, pipelines, drawLists, oit, shadows,
                                   canvas3d, view, proj, lightFrame);
+                LVK_PROFILER_ZONE_END();
+                LVK_PROFILER_ZONE("Shadow occlusion culling and map", 0xff8080ff);
+                shadows.renderMap(ctx, buf, loadedScene, targets.opaqueDepth, proj * view,
+                                       mesh, pipelines, lightFrame);
                 LVK_PROFILER_ZONE_END();
                 lvk::TextureHandle shadowTex;
                 LVK_PROFILER_ZONE("RT Shadow/AO", LVK_PROFILER_COLOR_CMD_DRAW);
@@ -219,7 +223,8 @@ VULKAN_APP_MAIN
             buf.cmdPopDebugGroupLabel();
 
             LVK_PROFILER_ZONE("Submit frame", LVK_PROFILER_COLOR_SUBMIT);
-            culling.storeSubmitHandle(ctx->submit(buf, ctx->getCurrentSwapchainTexture()));
+            const lvk::SubmitHandle frameSubmission = ctx->submit(buf, ctx->getCurrentSwapchainTexture());
+            culling.storeSubmitHandle(frameSubmission);
             LVK_PROFILER_ZONE_END();
 
             LVK_PROFILER_ZONE("Read GPU stats", LVK_PROFILER_COLOR_WAIT);

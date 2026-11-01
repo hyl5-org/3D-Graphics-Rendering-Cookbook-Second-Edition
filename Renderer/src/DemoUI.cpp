@@ -89,6 +89,15 @@ void drawControls(uint32_t width, uint32_t height, float aspectRatio, SceneCulli
 
     if (ImGui::CollapsingHeader("Shadow Mapping"))
     {
+        ImGui::Checkbox("Shadow occlusion culling", &gSettings.light.shadowOcclusionCulling);
+        ImGui::TextUnformatted("Applies to shadow maps; disable RT shadows to compare.");
+        if (gSettings.draw.meshesTransparent)
+            ImGui::TextUnformatted("Transparent receivers enabled: full caster list is used.");
+        const bool useRTShadow = shadows.rtShadowsActive;
+        if (useRTShadow)
+            ImGui::TextUnformatted("Inactive: RT shadows are enabled.");
+        else if (!gSettings.light.shadowOcclusionCulling)
+            ImGui::TextUnformatted("Culling disabled: full shadow caster list is submitted.");
         ImGui::SliderFloat("Sun illuminance (lux)", &gSettings.light.illuminanceLux, 0.0f, 150000.0f, "%.0f lux");
         ImGui::SliderFloat("Environment calibration (nits/unit)", &gSettings.light.environmentLuminance, 1.0f, 100000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("Environment multiplier", &gSettings.light.environmentIntensity, 0.0f, 10.0f);
@@ -103,7 +112,7 @@ void drawControls(uint32_t width, uint32_t height, float aspectRatio, SceneCulli
         ImGui::SliderFloat("Theta", &gSettings.light.theta, -180.0f, +180.0f);
         ImGui::SliderFloat("Phi", &gSettings.light.phi, -85.0f, +85.0f);
         ImGui::Unindent(indentSize);
-        ImGui::Image(shadows.map.index(), ImVec2(512, 512));
+        ImGui::Image(shadows.map.index(), ImVec2(4096, 4096));
     }
 
     if (ImGui::CollapsingHeader("SSAO"))

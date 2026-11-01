@@ -2,6 +2,7 @@
 
 #include "RayTracing.h"
 #include "SceneResources.h"
+#include "ShadowOcclusionCulling.h"
 
 #include "scene/Skybox.h"
 
@@ -133,12 +134,17 @@ struct ShadowPass
     lvk::Holder<lvk::TextureHandle> map;
     lvk::Holder<lvk::SamplerHandle> sampler;
     lvk::Holder<lvk::BufferHandle> lightBuffer;
-    LightParams previousLight = {.depthBiasConst = 0.0f};
+    std::unique_ptr<ShadowOcclusionCulling> shadowOcclusionCulling;
+    bool rtShadowsActive = false;
     uint32_t frameIndex = 0;
 
     explicit ShadowPass(const std::unique_ptr<lvk::IContext> &ctx);
 
-    void updateIfNeeded(lvk::ICommandBuffer &buf, const VKMesh11 &mesh, const RenderPipelines &pipelines,
+    void updateLight(lvk::ICommandBuffer& buf, const VKMesh11& mesh, const LightFrame& lightFrame);
+
+    void renderMap(const std::unique_ptr<lvk::IContext>& ctx, lvk::ICommandBuffer &buf,
+                        const LoadedScene& scene, lvk::TextureHandle receiverDepth, const mat4& cameraViewProj,
+                        const VKMesh11 &mesh, const RenderPipelines &pipelines,
                         const LightFrame &lightFrame);
 };
 

@@ -28,7 +28,7 @@ ShadowPass::ShadowPass(const std::unique_ptr<lvk::IContext> &ctx)
     map = ctx->createTexture({
         .type = lvk::TextureType_2D,
         .format = lvk::Format_Z_UN16,
-        .dimensions = {512, 512},
+        .dimensions = {4096, 4096},
         .usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
         .components = {.r = lvk::Swizzle_R, .g = lvk::Swizzle_R, .b = lvk::Swizzle_R, .a = lvk::Swizzle_1},
         .debugName = "Shadow map",
@@ -50,24 +50,39 @@ ShadowPass::ShadowPass(const std::unique_ptr<lvk::IContext> &ctx)
     });
 }
 
-void ShadowPass::updateIfNeeded(lvk::ICommandBuffer &buf, const VKMesh11 &mesh, const RenderPipelines &pipelines,
+void ShadowPass::renderMap(const std::unique_ptr<lvk::IContext>& ctx, lvk::ICommandBuffer &buf,
+                                const LoadedScene& scene, lvk::TextureHandle receiverDepth, const mat4& cameraViewProj,
+                                const VKMesh11 &mesh, const RenderPipelines &pipelines,
                                 const LightFrame &lightFrame)
 {
+    const bool useShadowOcclusionCulling = gSettings.light.shadowOcclusionCulling && !gSettings.draw.meshesTransparent;
     const bool useRTShadow = mesh.rayTracing_.valid() && gSettings.rayTracing.shadows;
-    if (!useRTShadow && previousLight != gSettings.light)
+    rtShadowsActive = useRTShadow;
+    // Receiver depth changes with camera visibility, alpha-tested textures and scene contents.
+    // Render both culled and reference shadow maps each frame for a fair A/B comparison.
+    if (!useRTShadow)
     {
-        previousLight = gSettings.light;
+        if (useShadowOcclusionCulling)
+        {
+            if (!shadowOcclusionCulling) shadowOcclusionCulling = std::make_unique<ShadowOcclusionCulling>(ctx, scene, mesh);
+            shadowOcclusionCulling->execute(ctx, buf, receiverDepth, mesh, cameraViewProj, lightFrame.proj * lightFrame.view);
+        }
         buf.cmdBeginRendering(lvk::RenderPass{.depth = {.loadOp = lvk::LoadOp_Clear, .clearDepth = 1.0f}},
                               lvk::Framebuffer{.depthStencil = {.texture = map}});
         buf.cmdPushDebugGroupLabel("Shadow map", 0xff0000ff);
         buf.cmdSetDepthBias(gSettings.light.depthBiasConst, gSettings.light.depthBiasSlope);
         buf.cmdSetDepthBiasEnable(true);
-        mesh.draw(buf, pipelines.shadow, lightFrame.view, lightFrame.proj);
+        mesh.draw(buf, pipelines.shadow, lightFrame.view, lightFrame.proj, {},
+                  useShadowOcclusionCulling ? &shadowOcclusionCulling->draws : nullptr);
         buf.cmdSetDepthBiasEnable(false);
         buf.cmdPopDebugGroupLabel();
         buf.cmdEndRendering();
     }
 
+}
+
+void ShadowPass::updateLight(lvk::ICommandBuffer& buf, const VKMesh11& mesh, const LightFrame& lightFrame)
+{
     // clang-format off
   const mat4 scaleBias = mat4(0.5, 0.0, 0.0, 0.0,
                               0.0, 0.5, 0.0, 0.0,

@@ -12,7 +12,8 @@ add_custom_command(
         --compiler "${RENDERER_SLANGC}"
         --source-dir "${CMAKE_CURRENT_LIST_DIR}/../shaders"
         --output-dir "${RENDERER_SHADER_OUTPUT_DIR}"
-    DEPENDS ${RENDERER_SLANG_SOURCES} "${CMAKE_CURRENT_LIST_DIR}/../tools/CompileShaders.py" "${RENDERER_SLANGC}"
+    DEPENDS ${RENDERER_SLANG_SOURCES} "${CMAKE_CURRENT_LIST_DIR}/../shaders/shadow_occlusion_culling_config.h"
+        "${CMAKE_CURRENT_LIST_DIR}/../tools/CompileShaders.py" "${RENDERER_SLANGC}"
     COMMENT "Compiling Renderer Slang shaders"
     VERBATIM)
 add_custom_target(RendererShaders DEPENDS "${RENDERER_SHADER_OUTPUT_DIR}/RendererShaders.h")
