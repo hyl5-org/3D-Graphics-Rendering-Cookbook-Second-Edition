@@ -161,3 +161,7 @@ endif()
 
 # This fork maintains only the final Chapter 11 demo as an app target.
 add_subdirectory(Renderer)
+
+if(NOT ANDROID)
+  add_subdirectory(NeuralTexture)
+endif()
