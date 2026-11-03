@@ -71,7 +71,7 @@ Windows 和 Android 都统一使用仓库根目录下的 `build`。
 cmake -S . -B build
 ```
 
-进入 `build`，用 Visual Studio 打开 `lvk_xr.slnx`，编译/运行 `Renderer`
+进入 `build`，用 Visual Studio 打开 `lvk.slnx`，编译/运行 `Renderer`
 
 ## Android 打包部署
 
@@ -106,13 +106,13 @@ python Renderer\deploy_android_content.py
 检查设备上资源是否正常推送
 
 ```text
-adb shell ls /sdcard/lvk_xr/ -a
+adb shell ls /sdcard/lvk/ -a
 // 缓存数据
-/sdcard/lvk_xr/.cache/ch11_bistro_android.meshes
-/sdcard/lvk_xr/.cache/ch11_bistro_android.materials
-/sdcard/lvk_xr/.cache/ch11_bistro_android.scene
-/sdcard/lvk_xr/.cache/out_textures_11_astc/
-/sdcard/lvk_xr/deps/src/bistro/Exterior/exterior.obj
+/sdcard/lvk/.cache/ch11_bistro_android.meshes
+/sdcard/lvk/.cache/ch11_bistro_android.materials
+/sdcard/lvk/.cache/ch11_bistro_android.scene
+/sdcard/lvk/.cache/out_textures_11_astc/
+/sdcard/lvk/deps/src/bistro/Exterior/exterior.obj
 ...
 其他资源/shader等
 ```
