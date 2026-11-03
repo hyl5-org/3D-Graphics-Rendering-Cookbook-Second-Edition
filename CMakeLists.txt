@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.19)
 
-project(vrgraphics CXX C)
+project(lvk CXX C)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 

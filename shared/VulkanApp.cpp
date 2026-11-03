@@ -92,7 +92,7 @@ static std::string setAndroidWorkingDirectory()
         externalStorage = "/sdcard";
     }
 
-    std::string root = std::string(externalStorage) + "/vrgraphics";
+    std::string root = std::string(externalStorage) + "/lvk";
     ensureDirectory(root.c_str());
     ensureDirectory((root + "/logs").c_str());
     ensureDirectory((root + "/.cache").c_str());

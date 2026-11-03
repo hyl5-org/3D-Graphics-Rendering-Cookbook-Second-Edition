@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-ANDROID_ROOT_NAME = "vrgraphics"
+ANDROID_ROOT_NAME = "lvk"
 
 
 def adb_output(*args: str) -> str:
