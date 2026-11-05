@@ -18,6 +18,7 @@ def main():
     model, _ = load(a.checkpoint, a.device)
     target = reference(a.reference or a.checkpoint.with_suffix(".ref"), model, a.device)
     ids = torch.arange(len(target), device=a.device)
+    # test 只评估未参与训练的测试像素；full_reconstruction 包含全部像素。
     metrics = {
         "channels": CHANNEL_NAMES,
         "test": evaluate(model, target, ids[split(ids) == 0]),
@@ -25,6 +26,9 @@ def main():
         "raw_bytes": target.numel(),
     }
     if a.deployment:
+        if model.config["features"] != 8 or model.config["hidden"] != [32]:
+            p.error("Runtime deployment validation only supports 8->32->9")
+        # 独立解析 .ntc，并用 NumPy 重建解码流程，检查导出布局与 PyTorch 是否一致。
         data = a.deployment.read_bytes()
         header = struct.unpack_from("<8I", data)
         c = model.config
@@ -39,6 +43,7 @@ def main():
         b1 = values[n + 256 : n + 288]
         w2 = values[n + 288 : n + 576].reshape(32, 9)
         b2 = values[n + 576 : n + 585]
+        # 固定随机种子抽样，复现运行时的 repeat 双线性采样和两层 MLP。
         sample = np.random.default_rng(19).integers(len(target), size=1024)
         size = c["size"]
         grid = c["grid"]
@@ -61,6 +66,7 @@ def main():
         )
         with torch.inference_mode():
             expected = model.pixels(torch.tensor(sample, device=a.device)).cpu().numpy()
+        # 这里检查导出解码的一致性；重建纹理本身的误差由上面的 MSE / PSNR 衡量。
         max_error = float(np.max(np.abs(decoded - expected)))
         if max_error > 1e-5:
             raise AssertionError(f"Export/decode mismatch: {max_error}")

@@ -23,6 +23,7 @@ def main():
         p.error("Invalid material index")
     a.output.mkdir(parents=True, exist_ok=True)
     with torch.inference_mode():
+        # 分批重建指定材质的全部纹素；关闭梯度记录以减少推理开销。
         ids = (
             torch.arange(c["size"] ** 2, device=a.device) + a.material * c["size"] ** 2
         )
@@ -32,13 +33,14 @@ def main():
             .numpy()
             .reshape(c["size"], c["size"], 9)
         )
+    # PNG 便于观察各通道，channels.npy 保留解码后的浮点数据。
     pixels = np.rint(image * 255).clip(0, 255).astype("u1")
     Image.fromarray(pixels[..., :3]).save(a.output / "base_color.png")
     for i, name in enumerate(CHANNEL_NAMES[3:], 3):
         Image.fromarray(pixels[..., i]).save(a.output / (name + ".png"))
     np.save(a.output / "channels.npy", image)
     if a.export:
-        # Companion scene/reference files must use the same destination stem.
+        # 导出运行时模型，并复制同名 .scene / .ref，供 C++ sample 加载场景和对比原图。
         import shutil
 
         if a.export.resolve() == a.checkpoint.resolve():

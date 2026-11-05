@@ -273,7 +273,10 @@ header       = 32 bytes
 
 - `--grid`：增大网格可保存更多局部信息，但 latent 体积按网格边长的平方增长。
 - `--steps`：增加优化次数不会改变压缩包大小，但训练更久不保证每次都改善 validation 质量。
-- 网络宽度：增大 hidden 层可提高表达能力，也增加每次解码计算。当前 8→32→9 是固定架构，修改时需同步训练、导出、加载和 shader。
+- `--features`：设置每个 latent 格点的特征维数，默认 8；维数翻倍时 latent 存储量也翻倍。
+- `--hidden`：设置 MLP 各隐藏层宽度，默认 `32`。例如 `--hidden 64 64` 表示两个 64 维隐藏层，会增加网络容量和每次解码计算。
+
+Python 训练、checkpoint 加载、离线推理和质量测试支持上述可配置网络。C++ / Slang 解码仍使用默认的 `8→32→9`，其他架构暂不支持导出为运行时 `.ntc`，导出时会明确报错。
 
 这是一版有损、单分辨率的最小实现。细纹理和 alpha 边缘可能丢失；没有 mipmaps、流送、emissive 通道、熵编码或量化部署格式。场景只支持静态三角形、UV0、repeat wrapping、opaque/masked 材质；不支持 texture transform、sparse accessor 或透明混合。存在 normal map 时要求提供 tangent。
 
@@ -301,6 +304,35 @@ cmake --build build --config RelWithDebInfo --target NeuralTexture
 ```
 
 训练默认在可用时选择 CUDA，否则使用 CPU；`--device cpu` 或 `--device cuda` 可指定设备，需要安装对应的 PyTorch。GPU 渲染和解码不依赖 Python 或 PyTorch。
+
+### 对比特征维数、网络宽度和深度
+
+```powershell
+# 五组配置分别重新训练，并用相同的测试集评估；结果不会覆盖上面的默认模型。
+& $python NeuralTexture/tools/compare.py D:/Codes/models/Cauldron-Media/Sponza/glTF/Sponza.gltf --output .cache/ntc-capacity-256 --size 256 --grid 32 --steps 5000 --device cpu
+
+# 单独训练一个 16→64→64→9 网络。
+& $python NeuralTexture/tools/train.py D:/Codes/models/Cauldron-Media/Sponza/glTF/Sponza.gltf --output .cache/ntc-wide/sponza.pt --features 16 --hidden 64 64 --steps 5000
+
+# 新架构可离线重建贴图查看效果；此时不要传 --export。
+& $python NeuralTexture/tools/infer.py .cache/ntc-wide/sponza.pt --output .cache/ntc-wide/preview --material 0
+```
+
+`compare.py` 固定目标尺寸、latent 网格尺寸、batch、seed、学习率和更新次数。DataLoader 使用独立的随机数生成器，使不同网络看到相同顺序的训练像素。每组保存 checkpoint、日志和测试指标，`comparison.json` 汇总测试集与全图 PSNR、FP32 参数字节数、每次查询的 MLP 乘加数量及训练耗时。参数字节数不包含文件头、checkpoint 元数据或优化器状态。
+
+这是相同更新次数下的容量对比，不代表各网络已经收敛，也不代表相同 GPU 推理耗时下的质量对比。
+
+2026-11-05 的一轮实验：Sponza 全部 25 个材质，目标纹理 256×256，latent 网格 32×32，5000 steps、batch 2048、Adam 学习率 0.01、seed 7、CPU FP32。测试集约占像素的 10%，未参与训练；PSNR 由九通道的平均 MSE 计算。
+
+| 网络结构 | 测试 PSNR（dB） | 相对基线 | FP32 参数（KiB） | MLP 乘加 / 查询 |
+| --- | ---: | ---: | ---: | ---: |
+| 8→32→9（基线） | 26.149 | — | 802.29 | 544 |
+| 16→32→9 | 26.619 | +0.469 | 1603.29 | 800 |
+| 8→64→9 | 26.276 | +0.127 | 804.54 | 1088 |
+| 8→32→32→9 | 26.182 | +0.033 | 806.41 | 1568 |
+| 16→64→64→9 | 26.920 | +0.770 | 1622.79 | 5696 |
+
+这一轮增加 latent 维数的收益比单独加宽或加深 MLP 更明显。`16→32→9` 提升约 0.47 dB，MLP 乘加量增加约 47%，代价主要是 latent 存储翻倍。组合扩大后的网络质量最高，但 MLP 乘加量约为基线的 10.5 倍。这里只运行了一个 seed，较小的差值不能作为稳定收益的结论；乘加量也不能直接换算成 GPU 耗时。实验模型与完整逐通道指标位于 `.cache/ntc-capacity-256/`。
 
 继续训练可传入 `--resume .cache/ntc-torch/sponza.pt`，并将 `--steps` 设为新的总 step 数；配置必须匹配。当前恢复优化器与 step，但不保证随机数和 DataLoader 顺序的精确延续。
 
