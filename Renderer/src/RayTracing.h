@@ -5,6 +5,7 @@
 #include "shared/Scene/Scene.h"
 #include "shared/Scene/VtxData.h"
 #include "shared/UtilsMath.h"
+#include "../shaders/ray_tracing_instance.h"
 
 #include <algorithm>
 #include <inttypes.h>
@@ -60,13 +61,18 @@ inline uint64_t bytesToMiB100(uint64_t bytes)
     return (bytes * 100) / (1024 * 1024);
 }
 
-inline constexpr uint32_t kMaxRayTracingBLAS = 5000;
+inline constexpr uint32_t kMaxRayTracingBLAS = -1;
 
 inline RayTracingScene createRayTracingScene(const std::unique_ptr<lvk::IContext> &ctx, const MeshData &meshData,
                                              const Scene &scene, lvk::BufferHandle positionBuffer,
                                              lvk::BufferHandle indexBuffer)
 {
     RayTracingScene rt;
+    if (meshData.meshes.size() > kRayTracingMaskedBit)
+    {
+        LLOGW("RT AS: mesh count exceeds the 23-bit custom index capacity\n");
+        return rt;
+    }
     // sizeof(RGBA32F)
     const uint32_t vertexStride = meshData.positionOnlyStreams.inputBindings[0].stride;
     // RGBA32F
@@ -104,71 +110,93 @@ inline RayTracingScene createRayTracingScene(const std::unique_ptr<lvk::IContext
     uint64_t blasBuildBytes = 0;
     uint64_t blasFinalBytes = 0;
     uint64_t blasBuildScratchBytes = 0;
-
-    for (uint32_t meshIndex = 0; meshIndex != meshData.meshes.size(); ++meshIndex)
+    auto isTransparent = [&meshData](uint32_t material_id) -> bool
     {
-        if (blasCount >= kMaxRayTracingBLAS)
-        {
-            break;
-        }
-
-        const Mesh &mesh = meshData.meshes[meshIndex];
-        const uint32_t lod = std::min(0u, mesh.lodCount - 1);
-        const uint32_t indexCount = mesh.getLODIndicesCount(lod);
-        if (indexCount < 3 || (indexCount % 3) != 0 || mesh.vertexCount == 0)
-        {
-            continue;
-        }
-        const uint64_t indexBufferOffset = uint64_t(mesh.indexOffset) * sizeof(uint32_t);
-
-        lvk::AccelStructDesc blasDesc = {
-            .type = lvk::AccelStructType_BLAS,
-            .geometryType = lvk::AccelStructGeomType_Triangles,
-            .vertexFormat = vertexFormat,
-            .vertexBuffer = positionBuffer,
-            .vertexStride = vertexStride,
-            .numVertices = totalVertices,
-            .indexFormat = lvk::IndexFormat_UI32,
-            .indexBuffer = indexBuffer,
-            .transformBuffer = rt.blasTransformBuffer,
-            .buildRange =
-                {
-                    .primitiveCount = indexCount / 3,
-                    .primitiveOffset = static_cast<uint32_t>(indexBufferOffset),
-                    .firstVertex = mesh.vertexOffset,
-                },
-            .buildFlags = lvk::AccelStructBuildFlagBits_PreferFastTrace |
-                          (allowCompaction ? lvk::AccelStructBuildFlagBits_AllowCompaction : 0),
-            .debugName = "BLAS: Renderer mesh",
-        };
-
-        lvk::Result sizeResult;
-        const lvk::AccelStructSizes sizes = ctx->getAccelStructSizes(blasDesc, &sizeResult);
-        assert(sizeResult.isOk());
-
-        blasDescs.push_back(blasDesc);
-        blasMeshIndices.push_back(meshIndex);
-        ++blasCount;
-        blasPrimitiveCount += indexCount / 3;
-        blasBuildBytes += sizes.accelerationStructureSize;
-        blasBuildScratchBytes += sizes.buildScratchSize;
-    }
-
+        const Material &mtl = meshData.materials[material_id];
+        return (mtl.flags & sMaterialFlags_Transparent) > 0;
+    };
+    auto isMasked = [&meshData, &isTransparent](uint32_t material_id) -> bool
     {
-        std::vector<lvk::AccelStructHandle> batchHandles(blasDescs.size());
-        lvk::Result batchResult;
-        ctx->createBLASBatch(blasDescs.data(), batchHandles.data(), static_cast<uint32_t>(blasDescs.size()),
-                             &batchResult);
-        assert(batchResult.isOk());
-        for (uint32_t i = 0; i != blasDescs.size(); ++i)
+        const Material &mtl = meshData.materials[material_id];
+        return !isTransparent(material_id) && mtl.alphaTest > 0.0f && mtl.opacityTexture != -1 &&
+               mtl.baseColorTexture != -1;
+    };
+    {
+        for (uint32_t meshIndex = 0; meshIndex != meshData.meshes.size(); ++meshIndex)
         {
-            const uint32_t meshIndex = blasMeshIndices[i];
-            rt.blas[meshIndex] = lvk::Holder<lvk::AccelStructHandle>(ctx.get(), batchHandles[i]);
-            blasHandles[meshIndex] = batchHandles[i];
-            blasFinalBytes += ctx->getAccelStructMemorySize(batchHandles[i]);
+            if (blasCount >= kMaxRayTracingBLAS)
+            {
+                break;
+            }
+            const Mesh &mesh = meshData.meshes[meshIndex];
+            // TODO(hanyangl5): skip transparent for now
+            if (isTransparent(mesh.materialID))
+            {
+                continue;
+            }
+            const uint32_t lod = std::min(0u, mesh.lodCount - 1);
+            const uint32_t indexCount = mesh.getLODIndicesCount(lod);
+            if (indexCount < 3 || (indexCount % 3) != 0 || mesh.vertexCount == 0)
+            {
+                continue;
+            }
+            const uint64_t indexBufferOffset = uint64_t(mesh.indexOffset) * sizeof(uint32_t);
+            uint8_t geometryFlag = lvk::AccelStructGeometryFlagBits::AccelStructGeometryFlagBits_NoDuplicateAnyHit;
+
+            if (isMasked(mesh.materialID))
+            {
+                geometryFlag = lvk::AccelStructGeometryFlagBits::AccelStructGeometryFlagBits_NoDuplicateAnyHit;
+            }
+
+            lvk::AccelStructDesc blasDesc = {
+                .type = lvk::AccelStructType_BLAS,
+                .geometryType = lvk::AccelStructGeomType_Triangles,
+                .geometryFlags = geometryFlag,
+                .vertexFormat = vertexFormat,
+                .vertexBuffer = positionBuffer,
+                .vertexStride = vertexStride,
+                .numVertices = totalVertices,
+                .indexFormat = lvk::IndexFormat_UI32,
+                .indexBuffer = indexBuffer,
+                .transformBuffer = rt.blasTransformBuffer,
+                .buildRange =
+                    {
+                        .primitiveCount = indexCount / 3,
+                        .primitiveOffset = static_cast<uint32_t>(indexBufferOffset),
+                        .firstVertex = mesh.vertexOffset,
+                    },
+                .buildFlags = lvk::AccelStructBuildFlagBits_PreferFastTrace |
+                              (allowCompaction ? lvk::AccelStructBuildFlagBits_AllowCompaction : 0),
+                .debugName = "BLAS: Renderer mesh",
+            };
+
+            lvk::Result sizeResult;
+            const lvk::AccelStructSizes sizes = ctx->getAccelStructSizes(blasDesc, &sizeResult);
+            assert(sizeResult.isOk());
+
+            blasDescs.push_back(blasDesc);
+            blasMeshIndices.push_back(meshIndex);
+            ++blasCount;
+            blasPrimitiveCount += indexCount / 3;
+            blasBuildBytes += sizes.accelerationStructureSize;
+            blasBuildScratchBytes += sizes.buildScratchSize;
+        }
+
+        {
+            std::vector<lvk::AccelStructHandle> batchHandles(blasDescs.size());
+            lvk::Result batchResult;
+            ctx->createBLASBatch(blasDescs.data(), batchHandles.data(), static_cast<uint32_t>(blasDescs.size()),
+                                 &batchResult);
+            assert(batchResult.isOk());
+            for (uint32_t i = 0; i != blasDescs.size(); ++i)
+            {
+                const uint32_t meshIndex = blasMeshIndices[i];
+                rt.blas[meshIndex] = lvk::Holder<lvk::AccelStructHandle>(ctx.get(), batchHandles[i]);
+                blasHandles[meshIndex] = batchHandles[i];
+                blasFinalBytes += ctx->getAccelStructMemorySize(batchHandles[i]);
+            }
         }
     }
-
     std::vector<lvk::AccelStructInstance> instances;
     instances.reserve(scene.meshForNode.size());
     std::vector<RayTracingMeshData> shaderMeshes(meshData.meshes.size());
@@ -187,10 +215,9 @@ inline RayTracingScene createRayTracingScene(const std::unique_ptr<lvk::IContext
         {
             continue;
         }
-
         instances.push_back({
             .transform = toAccelTransform(scene.globalTransform[nodeIndex]),
-            .instanceCustomIndex = meshIndex,
+            .instanceCustomIndex = meshIndex | (isMasked(meshData.meshes[meshIndex].materialID) ? kRayTracingMaskedBit : 0u),
             .mask = 0xff,
             .instanceShaderBindingTableRecordOffset = 0,
             .flags = lvk::AccelStructInstanceFlagBits_TriangleFacingCullDisable,

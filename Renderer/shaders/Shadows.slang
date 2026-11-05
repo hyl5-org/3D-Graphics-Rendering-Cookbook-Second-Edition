@@ -18,10 +18,10 @@ float PCF3x3(float3 uvw, uint textureid, uint samplerid)
 float shadow(float4 s, uint textureid, uint samplerid)
 {
     s = s / s.w;
-    if (s.z > -1.0 && s.z < 1.0)
+    if (all(s.xyz >= float3(0.0)) && all(s.xyz <= float3(1.0)))
     {
-        float shadowSample = PCF(float3(s.x, 1.0 - s.y, s.z), textureid, samplerid);
-        return lerp(0.3, 1.0, shadowSample);
+        // PCF estimates light visibility: zero means fully occluded, one means unoccluded.
+        return PCF(float3(s.x, 1.0 - s.y, s.z), textureid, samplerid);
     }
     return 1.0;
 }

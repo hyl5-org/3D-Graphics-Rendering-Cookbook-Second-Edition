@@ -85,7 +85,6 @@ void ShadowPass::updateIfNeeded(lvk::ICommandBuffer &buf, const VKMesh11 &mesh, 
                             .rtAOSamples = static_cast<uint32_t>(std::max(gSettings.rayTracing.aoSamples, 1)),
                             .rtAORadius = gSettings.rayTracing.aoRadius,
                             .rtAOPower = gSettings.rayTracing.aoPower,
-                            .rtShadowStrength = gSettings.rayTracing.shadowStrength,
                             .rtShadowRadius = gSettings.rayTracing.shadowRadius,
                             .frameIndex = frameIndex++,
                             .environmentIntensity = gSettings.light.environmentIntensity * gSettings.light.environmentLuminance,
@@ -177,7 +176,8 @@ RTShadowAOPass::RTShadowAOPass(const std::unique_ptr<lvk::IContext> &ctx, const 
 
 void RTShadowAOPass::execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf,
                              const FrameTargets &targets, const ShadowPass &shadows, const RayTracingScene &rt,
-                             const mat4 &view, const mat4 &proj, lvk::SamplerHandle samplerClamp)
+                             const mat4 &view, const mat4 &proj, lvk::SamplerHandle samplerClamp, uint64_t ib,
+                             uint64_t vbp, uint64_t vba, uint64_t mat, uint32_t shadow_alpha_test_method, uint32_t retrace_max_depth)
 {
     if (!rt.valid())
     {
@@ -204,6 +204,13 @@ void RTShadowAOPass::execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICo
         .smpl = samplerClamp.index(),
         .texBlueNoise = blueNoise.index(),
         .tlas = rt.tlas.index(),
+        .shadow_alpha_test_method = shadow_alpha_test_method,
+        .retrace_max_depth = retrace_max_depth,
+        .materials = mat,
+        .indices = ib,
+        .verticesPosition = vbp,
+        .verticesAttributes = vba,
+        .meshes = ctx->gpuAddress(rt.meshDataBuffer),
         .bufferLight = ctx->gpuAddress(shadows.lightBuffer),
     };
     buf.cmdBindRenderPipeline(pipeline);

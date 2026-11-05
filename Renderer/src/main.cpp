@@ -102,27 +102,35 @@ VULKAN_APP_MAIN
                                   canvas3d, view, proj, lightFrame);
                 LVK_PROFILER_ZONE_END();
                 lvk::TextureHandle shadowTex;
-                LVK_PROFILER_ZONE("RT Shadow/AO", LVK_PROFILER_COLOR_CMD_DRAW);
-
-                if (mesh.rayTracing_.valid() && (gSettings.rayTracing.shadows || gSettings.rayTracing.ao))
-                {
-                    rtShadowAO.execute(ctx, buf, targets, shadows, mesh.rayTracing_, view, proj, samplerClamp);
-                    shadowTex = rtShadowAO.denoise(buf, targets, view, proj, samplerClamp);
-                }
-                LVK_PROFILER_ZONE_END();
 
                 lvk::TextureHandle reflectionTex;
-                LVK_PROFILER_ZONE("RT Reflection", LVK_PROFILER_COLOR_CMD_DRAW);
 
-                if (mesh.rayTracing_.valid() && (gSettings.rayTracing.reflection))
+                if (mesh.rayTracing_.valid())
                 {
-                    auto [ib, vbp, vba] = mesh.getRayTracingBuffers();
-                    const uint64_t mat = ctx->gpuAddress(mesh.bufferMaterials_);
-                    reflectionTex = rtReflection.execute(ctx, buf, targets, shadows, mesh.rayTracing_, view, proj,
-                                                         samplerClamp, rtShadowAO.blueNoise.index(), cameraPos,
-                                                         skyBox, ib, vbp, vba, mat);
+                    LVK_PROFILER_ZONE("RT Shadow/AO", LVK_PROFILER_COLOR_CMD_DRAW);
+
+                    if ((gSettings.rayTracing.shadows || gSettings.rayTracing.ao))
+                    {
+                        auto [ib, vbp, vba] = mesh.getRayTracingBuffers();
+                        const uint64_t mat = ctx->gpuAddress(mesh.bufferMaterials_);
+                        rtShadowAO.execute(ctx, buf, targets, shadows, mesh.rayTracing_, view, proj, samplerClamp, ib,
+                                           vbp, vba, mat, gSettings.rayTracing.shadow_alpha_test_method, gSettings.rayTracing.retrace_max_depth);
+                        shadowTex = rtShadowAO.denoise(buf, targets, view, proj, samplerClamp);
+                    }
+                    LVK_PROFILER_ZONE_END();
+
+                    LVK_PROFILER_ZONE("RT Reflection", LVK_PROFILER_COLOR_CMD_DRAW);
+
+                    if (gSettings.rayTracing.reflection)
+                    {
+                        auto [ib, vbp, vba] = mesh.getRayTracingBuffers();
+                        const uint64_t mat = ctx->gpuAddress(mesh.bufferMaterials_);
+                        reflectionTex =
+                            rtReflection.execute(ctx, buf, targets, shadows, mesh.rayTracing_, view, proj, samplerClamp,
+                                                 rtShadowAO.blueNoise.index(), cameraPos, skyBox, ib, vbp, vba, mat);
+                    }
+                    LVK_PROFILER_ZONE_END();
                 }
-                LVK_PROFILER_ZONE_END();
 
                 lvk::TextureHandle currentColor;
                 LVK_PROFILER_ZONE("Lighting pass", LVK_PROFILER_COLOR_CMD_DRAW);

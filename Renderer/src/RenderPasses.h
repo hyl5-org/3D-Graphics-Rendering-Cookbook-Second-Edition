@@ -22,7 +22,6 @@ struct LightData
     uint32_t rtAOSamples;
     float rtAORadius;
     float rtAOPower;
-    float rtShadowStrength;
     float rtShadowRadius;
     uint32_t frameIndex;
     float environmentIntensity;
@@ -150,16 +149,27 @@ struct RTShadowAOPushConstants
     uint32_t smpl;
     uint32_t texBlueNoise;
     uint32_t tlas;
+    uint32_t shadow_alpha_test_method; // 0: disabled, 1: candidate alpha test, 2: opaque retrace
+    uint32_t retrace_max_depth; // 1-16
+    uint64_t materials;
+    uint64_t indices;
+    uint64_t verticesPosition;
+    uint64_t verticesAttributes;
+    uint64_t meshes;
     uint64_t bufferLight;
 };
-static_assert(offsetof(RTShadowAOPushConstants, bufferLight) == 88);
+
+static_assert(offsetof(RTShadowAOPushConstants, materials) == 96);
+static_assert(offsetof(RTShadowAOPushConstants, bufferLight) == 136);
+static_assert(sizeof(RTShadowAOPushConstants) == 144);
 
 struct RTShadowAOPass
 {
     RTShadowAOPass(const std::unique_ptr<lvk::IContext> &ctx, const FrameTargets &targets, lvk::Format swapchainFormat);
     void execute(const std::unique_ptr<lvk::IContext> &ctx, lvk::ICommandBuffer &buf, const FrameTargets &targets,
                  const ShadowPass &shadows, const RayTracingScene &rt, const mat4 &view, const mat4 &proj,
-                 lvk::SamplerHandle samplerClamp);
+                 lvk::SamplerHandle samplerClamp, uint64_t ib, uint64_t vbp, uint64_t vba, uint64_t mat,
+                 uint32_t shadow_alpha_test_method, uint32_t retrace_max_depth);
     lvk::TextureHandle denoise(lvk::ICommandBuffer &buf, const FrameTargets &targets, const mat4 &view,
                                const mat4 &proj, lvk::SamplerHandle samplerClamp);
 

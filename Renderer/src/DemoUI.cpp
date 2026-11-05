@@ -136,8 +136,17 @@ void drawControls(uint32_t width, uint32_t height, float aspectRatio, SceneCulli
         // static const OmmSdkStatus ommStatus = probeOmmSdk();
         ImGui::Indent(indentSize);
         ImGui::Checkbox("RT shadows", &gSettings.rayTracing.shadows);
-        ImGui::SliderFloat("RT shadow strength", &gSettings.rayTracing.shadowStrength, 0.0f, 1.0f);
         ImGui::SliderFloat("RT shadow radius", &gSettings.rayTracing.shadowRadius, 0.0f, 0.1f);
+        int alphaTestMethod = static_cast<int>(gSettings.rayTracing.shadow_alpha_test_method);
+        if (ImGui::Combo("Shadow alpha test", &alphaTestMethod, "Disabled\0Candidate alpha test\0Opaque retrace\0"))
+            gSettings.rayTracing.shadow_alpha_test_method = static_cast<uint32_t>(alphaTestMethod);
+        if (gSettings.rayTracing.shadow_alpha_test_method == 2)
+        {
+            int retraceMaxDepth = static_cast<int>(gSettings.rayTracing.retrace_max_depth);
+            if (ImGui::SliderInt("Retrace max depth", &retraceMaxDepth, 1, 16))
+                gSettings.rayTracing.retrace_max_depth = static_cast<uint32_t>(retraceMaxDepth);
+        }
+
         ImGui::RadioButton("Gaussian denoise", &gSettings.rayTracing.denoiseMode, RTDenoiseMode_Gaussian);
         ImGui::RadioButton("A-trous denoise", &gSettings.rayTracing.denoiseMode, RTDenoiseMode_Atrous);
         ImGui::Checkbox("RTAO", &gSettings.rayTracing.ao);

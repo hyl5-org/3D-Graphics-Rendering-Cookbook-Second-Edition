@@ -34,7 +34,7 @@ PBRLighting evaluatePBRLighting(float3 baseColor, float metallic, float roughnes
     PBRLighting result;
     result.fresnel = pbrFresnel(f0, NdotV);
     result.direct = pbrMetallicRoughness(baseColor, metallic, roughness, N, V, L)
-                    * shadowVisibility * max(illuminanceLux, 0.0);
+                    * saturate(shadowVisibility) * max(illuminanceLux, 0.0);
 
     float3 sky = float3(-N.x, N.y, -N.z);
     float3 irradiance = textureBindlessCubeLod(texIrradiance, samplerId, sky, 0).rgb;

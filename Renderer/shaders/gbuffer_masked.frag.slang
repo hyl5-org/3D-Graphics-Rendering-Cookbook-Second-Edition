@@ -19,7 +19,7 @@ struct FragmentOutput
     float4 outGBuffer2 : SV_Target2;
     float4 outGBuffer3 : SV_Target3;
 };
-[shader("fragment")] FragmentOutput main(FragmentInput input) {
+[shader("fragment")] FragmentOutput main(FragmentInput input, bool isFrontFace : SV_IsFrontFace) {
     FragmentOutput output;
 
     MetallicRoughnessDataGPU mat = pc.materials[input.materialId];
@@ -42,6 +42,9 @@ struct FragmentOutput
             n = perturbNormal(n, input.worldPos, normalSample, float2(input.uv));
         }
     }
+
+    // Face the final shading normal toward the visible side of two-sided foliage.
+    n = isFrontFace ? n : -n;
 
     float3 emissive = mat.emissiveFactorAlphaCutoff.rgb;
     if (mat.emissiveTexture > 0)

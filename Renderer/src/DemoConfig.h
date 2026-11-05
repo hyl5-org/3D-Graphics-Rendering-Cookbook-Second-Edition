@@ -94,8 +94,9 @@ struct RayTracingSettings
     int aoSamples = 1;
     float aoRadius = 2.0f;
     float aoPower = 1.0f;
-    float shadowStrength = 0.5f;
     float shadowRadius = 0.02f;
+    uint32_t shadow_alpha_test_method = 1;
+    uint32_t retrace_max_depth = 3;
     bool reflection = true;
 };
 

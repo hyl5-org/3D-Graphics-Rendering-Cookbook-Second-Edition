@@ -32,7 +32,6 @@ struct LightBufferData
     uint rtAOSamples;
     float rtAORadius;
     float rtAOPower;
-    float rtShadowStrength;
     float rtShadowRadius;
     uint frameIndex;
     float environmentIntensity;

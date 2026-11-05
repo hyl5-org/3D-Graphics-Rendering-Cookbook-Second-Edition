@@ -16,7 +16,6 @@ struct LightBufferData
     uint rtAOSamples;
     float rtAORadius;
     float rtAOPower;
-    float rtShadowStrength;
     float rtShadowRadius;
     uint frameIndex;
     float environmentIntensity;
@@ -119,7 +118,7 @@ void closestHitMain(inout RayPayload payload, in BuiltInTriangleIntersectionAttr
 {
     float3 bary = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y,
                          attribs.barycentrics.x, attribs.barycentrics.y);
-    RayTracingMeshData mesh = pc.meshes[InstanceID()];
+    RayTracingMeshData mesh = pc.meshes[InstanceID() & kRayTracingMeshIndexMask];
     uint index = mesh.indexOffset + 3 * PrimitiveIndex();
     uint3 triangle = uint3(pc.indices->idx[index], pc.indices->idx[index + 1], pc.indices->idx[index + 2])
                      + mesh.vertexOffset;
@@ -158,6 +157,6 @@ void closestHitMain(inout RayPayload payload, in BuiltInTriangleIntersectionAttr
     // Reflected surfaces are currently shaded without shadow tests.
     PBRLighting lighting = evaluatePBRLighting(baseColor, metallic, roughness, N, V, L,
                                                1.0, 1.0, pc.texSkyboxIrradiance,
-                                               pc.envTex, pc.texBRDF_LUT, pc.smpl, true, pc.light->lightDir.w, pc.light->environmentIntensity);
+                                               pc.envTex, pc.texBRDF_LUT, pc.smpl, false, pc.light->lightDir.w, pc.light->environmentIntensity);
     payload.color = emissive + lighting.total();
 }
