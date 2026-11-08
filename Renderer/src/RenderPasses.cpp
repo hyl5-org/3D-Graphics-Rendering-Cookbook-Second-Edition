@@ -372,7 +372,8 @@ RTReflectionPass::RTReflectionPass(const std::unique_ptr<lvk::IContext> &ctx, co
     ms = loadRendererShader(ctx, "rtReflection.slang", "missMain");
     msShadow = loadRendererShader(ctx, "rtReflection.slang", "missMainShadow");
     chs = loadRendererShader(ctx, "rtReflection.slang", "closestHitMain");
-    if (!rgs.valid() || !ms.valid() || !msShadow.valid() || !chs.valid())
+    ahsFoliage = loadRendererShader(ctx, "rtReflection.slang", "anyHitFoliage");
+    if (!rgs.valid() || !ms.valid() || !msShadow.valid() || !chs.valid() || !ahsFoliage.valid())
     {
         return;
     }
@@ -384,7 +385,7 @@ RTReflectionPass::RTReflectionPass(const std::unique_ptr<lvk::IContext> &ctx, co
                 lvk::ShaderModuleHandle(ms),
                 lvk::ShaderModuleHandle(msShadow),
             },
-        .hitGroups = {{.smClosestHit = chs}},
+        .hitGroups = {{.smClosestHit = chs, .smAnyHit = ahsFoliage}},
         .maxRecursionDepth = 2,
     });
     const lvk::Dimensions Res = {.width = targets.sizeFb.width / rtDownsampleScale,

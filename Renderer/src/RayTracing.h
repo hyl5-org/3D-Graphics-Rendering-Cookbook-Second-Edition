@@ -141,12 +141,9 @@ inline RayTracingScene createRayTracingScene(const std::unique_ptr<lvk::IContext
                 continue;
             }
             const uint64_t indexBufferOffset = uint64_t(mesh.indexOffset) * sizeof(uint32_t);
-            uint8_t geometryFlag = lvk::AccelStructGeometryFlagBits::AccelStructGeometryFlagBits_NoDuplicateAnyHit;
-
-            if (isMasked(mesh.materialID))
-            {
-                geometryFlag = lvk::AccelStructGeometryFlagBits::AccelStructGeometryFlagBits_NoDuplicateAnyHit;
-            }
+            const uint8_t geometryFlag = isMasked(mesh.materialID)
+                ? lvk::AccelStructGeometryFlagBits_NoDuplicateAnyHit
+                : lvk::AccelStructGeometryFlagBits_Opaque;
 
             lvk::AccelStructDesc blasDesc = {
                 .type = lvk::AccelStructType_BLAS,

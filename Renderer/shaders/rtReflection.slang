@@ -4,6 +4,7 @@
 #include "Geometry.slang"
 #include "Bindless.slang"
 #include "Lighting.slang"
+#include "ray_tracing_material.slang"
 
 struct LightBufferData
 {
@@ -89,7 +90,7 @@ void rayGenMain()
     float3 accumulatedColor = float3(0.0, 0.0, 0.0);
     //while(payload.depth < pc.maxDepth)
     {
-        TraceRay(kTLAS[pc.tlas], RAY_FLAG_FORCE_OPAQUE, 0xff, 0, 0, 0, ray, payload);
+        TraceRay(kTLAS[pc.tlas], RAY_FLAG_NONE, 0xff, 0, 0, 0, ray, payload);
         accumulatedColor += payload.color;
         payload.depth++;
     }
@@ -159,4 +160,22 @@ void closestHitMain(inout RayPayload payload, in BuiltInTriangleIntersectionAttr
                                                1.0, 1.0, pc.texSkyboxIrradiance,
                                                pc.envTex, pc.texBRDF_LUT, pc.smpl, false, pc.light->lightDir.w, pc.light->environmentIntensity);
     payload.color = emissive + lighting.total();
+}
+
+// Reject alpha holes before closest-hit shading; solid geometry keeps the hit.
+[shader("anyhit")]
+void anyHitFoliage(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
+{
+    uint customIndex = InstanceID();
+    if ((customIndex & kRayTracingMaskedBit) == 0)
+    {
+        return;
+    }
+    RayTracingMeshData mesh = pc.meshes[customIndex & kRayTracingMeshIndexMask];
+    float alpha = sampleRayTracingAlpha(mesh, PrimitiveIndex(),
+                            attribs.barycentrics, pc.indices, pc.verticesAttributes, pc.materials);
+    if (alpha < pc.materials->mtl[mesh.materialId].emissiveFactorAlphaCutoff.w)
+    {
+        IgnoreHit();
+    }
 }
