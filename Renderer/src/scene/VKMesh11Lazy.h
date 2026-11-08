@@ -97,6 +97,7 @@ GLTFMaterialDataGPU convertToGPUMaterialLazy(const std::unique_ptr<lvk::IContext
         .metallicRoughnessNormalOcclusion = vec4(mat.metallicFactor, mat.roughness, 1.0f, 1.0f),
         .clearcoatTransmissionThickness = vec4(1.0f, 1.0f, mat.transparencyFactor, 1.0f),
         .emissiveFactorAlphaCutoff = vec4(vec3(mat.emissiveFactor), mat.alphaTest),
+        .alphaMode = getMaterialAlphaMode(mat),
     };
 
     auto startLoadingTexture = [&cache, &ctx, &files, &loadedTextureData, &loadingMutex](int textureId)

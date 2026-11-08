@@ -113,13 +113,13 @@ struct FragmentOutput
                 while (rq.Proceed())
                 {
                     uint customIndex = uint(rq.CandidateRayInstanceCustomIndex());
-                    if (pc.shadow_alpha_test_method == 0 || (customIndex & kRayTracingMaskedBit) == 0)
+                    if (pc.shadow_alpha_test_method == 0)
                     {
                         rq.CommitNonOpaqueTriangleHit();
                     }
                     else
                     {
-                        RayTracingMeshData mesh = pc.meshes[customIndex & kRayTracingMeshIndexMask];
+                        RayTracingMeshData mesh = pc.meshes[customIndex];
                         float alpha = sampleRayTracingAlpha(mesh, rq.CandidatePrimitiveIndex(),
                             rq.CandidateTriangleBarycentrics(), pc.indices, pc.verticesAttributes, pc.materials);
                         if (alpha >= pc.materials->mtl[mesh.materialId].emissiveFactorAlphaCutoff.w)
@@ -159,14 +159,15 @@ struct FragmentOutput
                         break;
                     }
                     uint customIndex = uint(rq.CommittedRayInstanceCustomIndex());
-                    if ((customIndex & kRayTracingMaskedBit) == 0)
+                    RayTracingMeshData mesh = pc.meshes[customIndex];
+                    MetallicRoughnessDataGPU mat = pc.materials->mtl[mesh.materialId];
+                    if (mat.alphaMode != kAlphaModeMask)
                     {
                         break;
                     }
-                    RayTracingMeshData mesh = pc.meshes[customIndex & kRayTracingMeshIndexMask];
                     float alpha = sampleRayTracingAlpha(mesh, rq.CommittedPrimitiveIndex(),
                         rq.CommittedTriangleBarycentrics(), pc.indices, pc.verticesAttributes, pc.materials);
-                    if (alpha >= pc.materials->mtl[mesh.materialId].emissiveFactorAlphaCutoff.w)
+                    if (alpha >= mat.emissiveFactorAlphaCutoff.w)
                     {
                         break;
                     }

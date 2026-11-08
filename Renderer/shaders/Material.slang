@@ -1,5 +1,8 @@
 #pragma once
 
+// Matches GLTFMaterialDataGPU::AlphaMode_Mask.
+static const uint kAlphaModeMask = 1;
+
 struct MetallicRoughnessDataGPU
 {
     float4 baseColorFactor;

@@ -5,7 +5,6 @@
 #include "shared/Scene/Scene.h"
 #include "shared/Scene/VtxData.h"
 #include "shared/UtilsMath.h"
-#include "../shaders/ray_tracing_instance.h"
 
 #include <algorithm>
 #include <inttypes.h>
@@ -68,9 +67,9 @@ inline RayTracingScene createRayTracingScene(const std::unique_ptr<lvk::IContext
                                              lvk::BufferHandle indexBuffer)
 {
     RayTracingScene rt;
-    if (meshData.meshes.size() > kRayTracingMaskedBit)
+    if (meshData.meshes.size() > (1u << 24))
     {
-        LLOGW("RT AS: mesh count exceeds the 23-bit custom index capacity\n");
+        LLOGW("RT AS: mesh count exceeds the 24-bit custom index capacity\n");
         return rt;
     }
     // sizeof(RGBA32F)
@@ -214,7 +213,7 @@ inline RayTracingScene createRayTracingScene(const std::unique_ptr<lvk::IContext
         }
         instances.push_back({
             .transform = toAccelTransform(scene.globalTransform[nodeIndex]),
-            .instanceCustomIndex = meshIndex | (isMasked(meshData.meshes[meshIndex].materialID) ? kRayTracingMaskedBit : 0u),
+            .instanceCustomIndex = meshIndex,
             .mask = 0xff,
             .instanceShaderBindingTableRecordOffset = 0,
             .flags = lvk::AccelStructInstanceFlagBits_TriangleFacingCullDisable,

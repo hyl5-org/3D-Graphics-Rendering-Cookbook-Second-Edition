@@ -49,6 +49,14 @@ using TextureCache = std::vector<lvk::Holder<lvk::TextureHandle>>;
 // textureId -> FileName
 using TextureFiles = std::vector<std::string>;
 
+inline uint32_t getMaterialAlphaMode(const Material &mat)
+{
+    if ((mat.flags & sMaterialFlags_Transparent) != 0)
+        return GLTFMaterialDataGPU::AlphaMode_Blend;
+    return mat.alphaTest > 0.0f && mat.opacityTexture != -1 && mat.baseColorTexture != -1
+        ? GLTFMaterialDataGPU::AlphaMode_Mask : GLTFMaterialDataGPU::AlphaMode_Opaque;
+}
+
 inline GLTFMaterialDataGPU convertToGPUMaterial(const std::unique_ptr<lvk::IContext> &ctx, const Material &mat,
                                                 const TextureFiles &files, TextureCache &cache)
 {
@@ -57,6 +65,7 @@ inline GLTFMaterialDataGPU convertToGPUMaterial(const std::unique_ptr<lvk::ICont
         .metallicRoughnessNormalOcclusion = vec4(mat.metallicFactor, mat.roughness, 1.0f, 1.0f),
         .clearcoatTransmissionThickness = vec4(1.0f, 1.0f, mat.transparencyFactor, 1.0f),
         .emissiveFactorAlphaCutoff = vec4(vec3(mat.emissiveFactor), mat.alphaTest),
+        .alphaMode = getMaterialAlphaMode(mat),
     };
 
     auto getTextureFromCache = [&cache, &ctx, &files](int textureId) -> uint32_t

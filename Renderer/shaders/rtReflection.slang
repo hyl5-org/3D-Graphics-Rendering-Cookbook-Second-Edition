@@ -119,7 +119,7 @@ void closestHitMain(inout RayPayload payload, in BuiltInTriangleIntersectionAttr
 {
     float3 bary = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y,
                          attribs.barycentrics.x, attribs.barycentrics.y);
-    RayTracingMeshData mesh = pc.meshes[InstanceID() & kRayTracingMeshIndexMask];
+    RayTracingMeshData mesh = pc.meshes[InstanceID()];
     uint index = mesh.indexOffset + 3 * PrimitiveIndex();
     uint3 triangle = uint3(pc.indices->idx[index], pc.indices->idx[index + 1], pc.indices->idx[index + 2])
                      + mesh.vertexOffset;
@@ -162,16 +162,11 @@ void closestHitMain(inout RayPayload payload, in BuiltInTriangleIntersectionAttr
     payload.color = emissive + lighting.total();
 }
 
-// Reject alpha holes before closest-hit shading; solid geometry keeps the hit.
+// Only masked geometry invokes Any-Hit; opaque geometry is accepted by traversal.
 [shader("anyhit")]
 void anyHitFoliage(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
 {
-    uint customIndex = InstanceID();
-    if ((customIndex & kRayTracingMaskedBit) == 0)
-    {
-        return;
-    }
-    RayTracingMeshData mesh = pc.meshes[customIndex & kRayTracingMeshIndexMask];
+    RayTracingMeshData mesh = pc.meshes[InstanceID()];
     float alpha = sampleRayTracingAlpha(mesh, PrimitiveIndex(),
                             attribs.barycentrics, pc.indices, pc.verticesAttributes, pc.materials);
     if (alpha < pc.materials->mtl[mesh.materialId].emissiveFactorAlphaCutoff.w)

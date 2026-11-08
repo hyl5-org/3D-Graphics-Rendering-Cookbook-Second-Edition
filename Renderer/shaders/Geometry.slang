@@ -1,5 +1,4 @@
 #pragma once
-#include "ray_tracing_instance.h"
 
 struct VertexPosition
 {
@@ -29,7 +28,7 @@ struct Indices
     uint idx[];
 };
 
-// Matches RayTracingMeshData; indexed by the low 23 bits of the TLAS custom index.
+// Matches RayTracingMeshData; indexed by the TLAS instance custom index (mesh index).
 struct RayTracingMeshData
 {
     uint indexOffset;
