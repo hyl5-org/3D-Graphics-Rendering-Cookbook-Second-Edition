@@ -96,7 +96,7 @@ RTShadowAOPass::RTShadowAOPass(const std::unique_ptr<lvk::IContext> &ctx, const 
 {
     uint32_t rtDownsampleScale = 1;
     vert = loadRendererShader(ctx, "QuadFlip.vert.slang");
-    frag = loadRendererShader(ctx, "rt_shadow_ao.frag.slang");
+    frag = loadRendererShader(ctx, "rt_shadow_ao.frag.slang", ctx->supportsOpacityMicromap() ? "omm" : "main");
     pipeline = ctx->createRenderPipeline({
         .smVert = vert,
         .smFrag = frag,

@@ -152,7 +152,7 @@ index becf68f..30e3315 100644
    bool enableValidationSync = true;
    bool generateSPIRVDebugInfo = true;
 diff --git a/lvk/vulkan/VulkanClasses.cpp b/lvk/vulkan/VulkanClasses.cpp
-index 20760a6..87e1ef6 100644
+index 20760a6..a27af86 100644
 --- a/lvk/vulkan/VulkanClasses.cpp
 +++ b/lvk/vulkan/VulkanClasses.cpp
 @@ -2433,6 +2433,9 @@ void lvk::CommandBuffer::cmdTransitionToGeneral(const ldr::Span<TextureHandle>&
@@ -564,7 +564,15 @@ index 20760a6..87e1ef6 100644
  }
  
  lvk::AccelStructHandle lvk::VulkanContext::createOpacityMicromap(const AccelStructDesc& desc, Result* outResult) {
-@@ -7838,6 +8051,7 @@ lvk::Result lvk::VulkanContext::createInstance() {
+@@ -6478,6 +6691,7 @@
+   };
+   const VkRayTracingPipelineCreateInfoKHR ciRayTracingPipeline = {
+       .sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR,
++      .flags = has_KHR_opacity_micromap_ ? VK_PIPELINE_CREATE_RAY_TRACING_OPACITY_MICROMAP_BIT_KHR : 0u,
+       .stageCount = numShaderStages,
+       .pStages = ciShaderStages.data(),
+       .groupCount = numShaderGroups,
+@@ -7838,6 +8052,7 @@ lvk::Result lvk::VulkanContext::createInstance() {
  
    const VkBool32 gpuav_enable = enableGpuAV ? VK_TRUE : VK_FALSE;
    const VkBool32 gpuav_post_process_descriptor_indexing = VK_FALSE; // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9222
@@ -572,7 +580,7 @@ index 20760a6..87e1ef6 100644
    const VkBool32 syncval_enable = config_.enableValidation && config_.enableValidationSync ? VK_TRUE : VK_FALSE;
    const VkBool32 legacy_detection = config_.enableValidation ? VK_TRUE : VK_FALSE;
    const char* legacy_detection_mode = "ONLY_ENABLED";
-@@ -7857,6 +8071,7 @@ lvk::Result lvk::VulkanContext::createInstance() {
+@@ -7857,6 +8072,7 @@ lvk::Result lvk::VulkanContext::createInstance() {
    const VkLayerSettingEXT settings[] = {
        LAYER_SETTINGS_BOOL32("gpuav_enable", &gpuav_enable),
        LAYER_SETTINGS_BOOL32("gpuav_post_process_descriptor_indexing", &gpuav_post_process_descriptor_indexing),
@@ -580,6 +588,26 @@ index 20760a6..87e1ef6 100644
        LAYER_SETTINGS_BOOL32("validate_sync", &syncval_enable),
        LAYER_SETTINGS_BOOL32("syncval_submit_time_validation", &syncval_enable),
        LAYER_SETTINGS_BOOL32("legacy_detection", &legacy_detection),
+@@ -8783,9 +8999,16 @@
+         VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME, has_KHR_compute_shader_derivatives_, &computeShaderDerivativesFeatures);
+   }
+   addOptionalExtension(VK_KHR_DEVICE_ADDRESS_COMMANDS_EXTENSION_NAME, has_KHR_device_address_commands_, &deviceAddressCommandsFeatures);
+-  if (has_KHR_acceleration_structure_ && has_KHR_device_address_commands_) {
+-    // opacity micromaps only be created with vkCreateAccelerationStructure2KHR()
+-    addOptionalExtension(VK_KHR_OPACITY_MICROMAP_EXTENSION_NAME, has_KHR_opacity_micromap_, &opacityMicromapFeatures);
++  if (has_KHR_acceleration_structure_ && has_KHR_device_address_commands_ &&
++      hasExtension(VK_KHR_OPACITY_MICROMAP_EXTENSION_NAME, allDeviceExtensions)) {
++    VkPhysicalDeviceFeatures2 features = {
++        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
++        .pNext = &opacityMicromapFeatures,
++    };
++    vkGetPhysicalDeviceFeatures2(vkPhysicalDevice_, &features);
++    if (opacityMicromapFeatures.micromap) {
++      addOptionalExtension(VK_KHR_OPACITY_MICROMAP_EXTENSION_NAME, has_KHR_opacity_micromap_, &opacityMicromapFeatures);
++    }
+   }
+   // only ask for the feature bits the device reports, otherwise vkCreateDevice() fails
+   if (vkTensorFeatures_.tensors && vkTensorFeatures_.shaderTensorAccess && vkTensorFeatures_.shaderStorageTensorArrayDynamicIndexing &&
 diff --git a/lvk/vulkan/VulkanClasses.h b/lvk/vulkan/VulkanClasses.h
 index e018715..bc028c1 100644
 --- a/lvk/vulkan/VulkanClasses.h

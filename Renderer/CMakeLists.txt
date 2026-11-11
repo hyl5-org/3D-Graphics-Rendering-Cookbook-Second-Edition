@@ -48,11 +48,15 @@ else()
   add_dependencies(${APP_NAME} RendererShaders)
   target_include_directories(${APP_NAME} PRIVATE "${RENDERER_SHADER_OUTPUT_DIR}")
   target_link_libraries(${APP_NAME} PRIVATE SharedUtils assimp meshoptimizer)
-  # TODO(luhanyang): Link OMM SDK once the runtime micromap backend is implemented.
-  # if(COOKBOOK_WITH_RTX_OMM AND TARGET omm-lib)
-  #   target_link_libraries(${APP_NAME} PRIVATE omm-lib)
-  #   target_compile_definitions(${APP_NAME} PRIVATE COOKBOOK_WITH_RTX_OMM=1)
-  # endif()
+  if(TARGET omm-lib)
+    target_link_libraries(${APP_NAME} PRIVATE omm-lib)
+    target_compile_definitions(${APP_NAME} PRIVATE COOKBOOK_WITH_RTX_OMM=1)
+    if(WIN32)
+      add_custom_command(TARGET ${APP_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omm-lib> $<TARGET_FILE_DIR:${APP_NAME}>
+        VERBATIM)
+    endif()
+  endif()
   file(GLOB_RECURSE FINAL_DEMO_SHADER_FILES LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
       shaders/*.slang)
   target_sources(${APP_NAME} PRIVATE ${FINAL_DEMO_SHADER_FILES})

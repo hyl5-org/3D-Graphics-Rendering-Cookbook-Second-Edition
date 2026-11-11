@@ -6,6 +6,40 @@ import struct
 import subprocess
 
 
+def enable_opacity_micromaps(words):
+    # Slang cannot yet emit the KHR RayQuery execution mode. Add it to this variant only.
+    instructions = []
+    offset = 5
+    while offset < len(words):
+        count = words[offset] >> 16
+        instructions.append(list(words[offset:offset + count]))
+        offset += count
+
+    def opcode(instruction):
+        return instruction[0] & 0xffff
+
+    def instruction(op, *operands):
+        return [(len(operands) + 1) << 16 | op, *operands]
+
+    header = list(words[:5])
+    entry = next(i[2] for i in instructions if opcode(i) == 15)  # OpEntryPoint
+    bool_type = next(i[1] for i in instructions if opcode(i) == 20)  # OpTypeBool
+    enabled_id = header[3]
+    header[3] += 1
+    capability_end = next(i for i, op in enumerate(instructions) if opcode(op) != 17)
+    extension = b"SPV_KHR_opacity_micromap\0"
+    extension += bytes(-len(extension) % 4)
+    instructions[capability_end:capability_end] = [
+        instruction(17, 6032),  # RayTracingOpacityMicromapExecutionModeKHR
+        instruction(10, *struct.unpack(f"<{len(extension) // 4}I", extension)),  # OpExtension
+    ]
+    mode_end = max(i for i, op in enumerate(instructions) if opcode(op) in (15, 16, 331)) + 1
+    instructions.insert(mode_end, instruction(331, entry, 6031, enabled_id))  # OpExecutionModeId
+    function_start = next(i for i, op in enumerate(instructions) if opcode(op) == 54)
+    instructions.insert(function_start, instruction(41, bool_type, enabled_id))  # OpConstantTrue
+    return header + [word for op in instructions for word in op]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compiler", required=True)
@@ -40,6 +74,16 @@ def main():
             header.append("    " + ", ".join(f"0x{word:08x}" for word in words[i:i + 8]) + ",\n")
         header.append("};\n")
         entries.append(f'    {{"{source.name}", "{entry_point}", lvk::Stage_{stage}, {name}, sizeof({name})}},\n')
+        if source.name == "rt_shadow_ao.frag.slang":
+            omm_words = enable_opacity_micromaps(words)
+            omm_name = name + "_omm"
+            (args.output_dir / "rt_shadow_ao_omm.frag.spv").write_bytes(
+                struct.pack(f"<{len(omm_words)}I", *omm_words))
+            header.append(f"inline constexpr uint32_t {omm_name}[] = {{\n")
+            for i in range(0, len(omm_words), 8):
+                header.append("    " + ", ".join(f"0x{word:08x}" for word in omm_words[i : i + 8]) + ",\n")
+            header.append("};\n")
+            entries.append(f'    {{"{source.name}", "omm", lvk::Stage_{stage}, {omm_name}, sizeof({omm_name})}},\n')
     if not entries:
         raise RuntimeError("No Renderer Slang stages found")
     header.append("struct Shader { std::string_view name; std::string_view entryPoint; lvk::ShaderStage stage; const uint32_t* data; size_t size; };\n")

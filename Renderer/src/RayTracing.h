@@ -1,7 +1,6 @@
 #pragma once
 
-// TODO(luhanyang): Enable when OMM bake output can be attached to BLAS geometry.
-// #include "OmmSdk.h"
+#include "OmmSdk.h"
 #include "shared/Scene/Scene.h"
 #include "shared/Scene/VtxData.h"
 #include "shared/UtilsMath.h"
@@ -28,6 +27,7 @@ struct RayTracingScene
     lvk::Holder<lvk::BufferHandle> blasTransformBuffer;
     lvk::Holder<lvk::BufferHandle> instancesBuffer;
     lvk::Holder<lvk::BufferHandle> meshDataBuffer;
+    std::vector<OmmGeometry> opacityMicromaps;
     std::vector<lvk::Holder<lvk::AccelStructHandle>> blas;
     lvk::Holder<lvk::AccelStructHandle> tlas;
 
@@ -78,7 +78,10 @@ inline RayTracingScene createRayTracingScene(const std::unique_ptr<lvk::IContext
     const lvk::VertexFormat vertexFormat = meshData.positionOnlyStreams.attributes[0].format;
     const uint32_t totalVertices = static_cast<uint32_t>(meshData.positionData.size() / vertexStride);
     const bool allowCompaction = true;
-    // const OmmSdkStatus ommStatus = probeOmmSdk();
+#ifdef COOKBOOK_WITH_RTX_OMM
+    OmmBaker ommBaker(ctx);
+    uint32_t maskedBlasCount = 0;
+#endif
 
     LLOGL(
         "RT AS: build BLAS from shared mesh buffers: meshes=%zu, maxBLAS=%u, vertices=%u, indexBytes=%zu, compact=%s\n",
@@ -166,6 +169,20 @@ inline RayTracingScene createRayTracingScene(const std::unique_ptr<lvk::IContext
                 .debugName = "BLAS: Renderer mesh",
             };
 
+#ifdef COOKBOOK_WITH_RTX_OMM
+            if (isMasked(mesh.materialID))
+            {
+                ++maskedBlasCount;
+                OmmGeometry omm = ommBaker.bake(meshData, mesh, indexCount);
+                if (omm.micromap.valid())
+                {
+                    blasDesc.micromap = omm.micromap;
+                    blasDesc.micromapIndexBuffer = omm.indices;
+                    rt.opacityMicromaps.push_back(std::move(omm));
+                }
+            }
+#endif
+
             lvk::Result sizeResult;
             const lvk::AccelStructSizes sizes = ctx->getAccelStructSizes(blasDesc, &sizeResult);
             assert(sizeResult.isOk());
@@ -194,6 +211,9 @@ inline RayTracingScene createRayTracingScene(const std::unique_ptr<lvk::IContext
         }
     }
     std::vector<lvk::AccelStructInstance> instances;
+#ifdef COOKBOOK_WITH_RTX_OMM
+    LLOGL("RT OMM: %zu / %u masked BLAS have opacity micromaps\n", rt.opacityMicromaps.size(), maskedBlasCount);
+#endif
     instances.reserve(scene.meshForNode.size());
     std::vector<RayTracingMeshData> shaderMeshes(meshData.meshes.size());
     for (size_t i = 0; i != meshData.meshes.size(); ++i)
